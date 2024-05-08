@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from time import time, sleep
+from itertools import product
 
 class Movement:
     def __init__(self, x0, y0, z0, T):
@@ -148,9 +149,17 @@ def init():
     for num in range(num_transceivers):
         tr_text.append("Tr" + str(num))
         transceivers.append(Transceiver(*tr_pos[num, :], k))
+        
+    # This is the matrix for multilateration to solve it analytically via least-squares algorithm
+    A = np.array([]).reshape(0, 3)
+    for i in range (num_transceivers-1):
+        A = np.vstack((A, tr_pos[-1] - tr_pos[i]))
+    A = 2*A
+    # removing the z-coordinate since the transceivers are all in the same level. otherwise we get a mathematical error. The z-component is then set to 0 again
+    A = A[:, :-1]
     
     
-    tar_pos = np.array([[0, 0, 0], [-2, -1, 0], [1, 2, 0]], dtype=np.float64, ndmin=2)
+    tar_pos = np.array([[0, 0, 0]], dtype=np.float64, ndmin=2)
     num_targets = tar_pos.shape[0]
     t_text = []
     tars = []
@@ -193,9 +202,9 @@ def init():
     
     # Define Movements
     movements = []
-    movements.append(Movement(*tars[0].get_pos(), T).circular_movement(5, 30))
-    movements.append(Movement(*tars[1].get_pos(), T).constant())
-    movements.append(Movement(*tars[2].get_pos(), T).linear_movement(0.1, -0.1, 0))
+    # movements.append(Movement(*tars[0].get_pos(), T).circular_movement(5, 30))
+    # movements.append(Movement(*tars[1].get_pos(), T).constant())
+    movements.append(Movement(*tars[0].get_pos(), T).linear_movement(0.02, -0.01, 0))
     
     # Plot Circles
     if (circle_show):
@@ -206,8 +215,8 @@ def init():
     
     plt.show()
     # Main loop
-    D = 15 # duration of simulation in seconds
-    wait_time = 0.0
+    D = 60 # duration of simulation in seconds
+    wait_time = 1.0
     
     print("Press s to start simulation ...")
     import keyboard
@@ -224,6 +233,19 @@ def init():
     while(D > time_diff):
         time_diff = time() - start_time
         
+        
+        # Movement:
+        [tars[i].new_pos(*next(movements[i])) for i in range(len(movements))]
+            
+        # New Measurement
+        H_abs_db = 20*np.log10(send_receive_all(len_fft, tars, transceivers))
+        
+        # Redrawing the db plots
+        [plot.set_ydata(H_abs_db[:, num]) for num, plot in enumerate(plots)]
+        fig_plots.canvas.draw()
+        fig_plots.canvas.flush_events()
+        
+        
         # Tracking
         
         # Multilateration: R = anzahl radare und T = Anzahl Ziele
@@ -236,6 +258,19 @@ def init():
         dists = [R_range[max_i[num]] for num in range(len(max_i))]
         # with this function, ``find_peaks()`` we get also some other information, which we filter out by only taking the 0th element of the list
         
+        # Multilateration calculation analytically with least squares
+        possible_combinations = list(product(*dists))
+        possible_targets = np.array([]).reshape(0, 3)
+        for poss_comb in possible_combinations:
+            b = np.array([])
+            for tr in range(num_transceivers-1):
+                b = np.append(b, (poss_comb[tr]**2 - poss_comb[-1]**2) - np.sum(np.power(tr_pos[tr], 2)) + np.sum(np.power(tr_pos[-1], 2)))
+            
+            coordinate = np.dot(np.matmul(np.linalg.inv(np.matmul(A.T, A)), A.T), b)
+            possible_targets = np.vstack((possible_targets, np.append(coordinate, 0)))
+        
+        
+        # Drawing the circles
         if (circle_show):
             circle_ax.cla()
             circle_ax.set_xlim((-20, 20))
@@ -248,21 +283,12 @@ def init():
             circle_fig.canvas.draw()
             circle_fig.canvas.flush_events()
         
-        # Movement:
-        [tars[i].new_pos(*next(movements[i])) for i in range(len(movements))]
-            
-        # New Measurement
-        H_abs_db = 20*np.log10(send_receive_all(len_fft, tars, transceivers))
         
-        # Measuring and plotting
-        ## Redrawing the plots
-        [plot.set_ydata(H_abs_db[:, num]) for num, plot in enumerate(plots)]
-        fig_plots.canvas.draw()
-        fig_plots.canvas.flush_events()
         
-        ## Redrawing Targets
+        # Redrawing Targets
         plots_targ.set_offsets([tars[i].get_pos()[:2] for i in range(len(tars))])
         [text.set_position(tars[num].get_pos()[:2] + text_offset) for num, text in enumerate(targ_texts)]
+         
         fig_elements.canvas.draw()
         fig_elements.canvas.flush_events()
         
