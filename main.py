@@ -141,7 +141,7 @@ def init():
     w = 2 * np.pi * f
     k = w / c_0
     
-    # Setting up the Targets and Transceivers
+    # Setting up the Transceivers
     tr_pos = np.array([[0, -10, 0], [10, 10, 0], [-10, 10, 0]], dtype=np.float64)
     num_transceivers = tr_pos.shape[0]
     transceivers = []
@@ -159,19 +159,23 @@ def init():
     A = A[:, :-1]
     
     
-    tar_pos = np.array([[0, 0, 0]], dtype=np.float64, ndmin=2)
+    # Setting up the targets
+    tar_pos = np.array([[0, 0, 0], [-3, 2, 0]], dtype=np.float64, ndmin=2)
     num_targets = tar_pos.shape[0]
     t_text = []
     tars = []
     for num in range(num_targets):
         t_text.append("T" + str(num))
         tars.append(Target(*tar_pos[num, :]))
+            
+    # Drawing Map of Targets and Transceivers
+    plt.ion()
     
-    # Drawing Targets and Transceivers
-    fig_elements = plt.figure("Targets and Transceivers")
-    fig_elements.canvas.manager.window.raise_()
-    plots_trans = plt.scatter(*zip(*tr_pos[:, :2]), marker='x', color='b', label='Transceivers')
-    plots_targ = plt.scatter(*zip(*tar_pos[:, :2]), marker='o', color='r', label='Targets')
+    fig_map, ax_map = plt.subplots() # ("Targets and Transceivers")
+    sc_tr_map = ax_map.scatter(*zip(*tr_pos[:, :2]), marker='x', color='b', label='Transceivers')
+    sc_tar_map = ax_map.scatter(*zip(*tar_pos[:, :2]), marker='o', color='k', label='Targets')
+    sc_est_map = ax_map.scatter([], [], marker='o', color='r', label='Estimation', s=15)
+    
     targ_texts = []
     text_offset = 0.5
     for (i, text) in enumerate(tr_text):
@@ -203,20 +207,19 @@ def init():
     # Define Movements
     movements = []
     # movements.append(Movement(*tars[0].get_pos(), T).circular_movement(5, 30))
-    # movements.append(Movement(*tars[1].get_pos(), T).constant())
-    movements.append(Movement(*tars[0].get_pos(), T).linear_movement(0.02, -0.01, 0))
+    movements.append(Movement(*tars[0].get_pos(), T).linear_movement(0.3, -0.2, 0))
+    movements.append(Movement(*tars[1].get_pos(), T).constant())
     
     # Plot Circles
     if (circle_show):
         circle_fig, circle_ax = plt.subplots()
-        circle_ax.set_xlim((-20, 20))
-        circle_ax.set_ylim((-20, 20))
         colors = ['b', 'r', 'g', 'k', 'y', 'm']
+        circle_ax.axis('equal')
     
     plt.show()
     # Main loop
-    D = 60 # duration of simulation in seconds
-    wait_time = 1.0
+    D = 20 # duration of simulation in seconds
+    wait_time = 0.2
     
     print("Press s to start simulation ...")
     import keyboard
@@ -230,6 +233,7 @@ def init():
     start_time = time()
     time_diff = 0
     
+    plt.draw()
     while(D > time_diff):
         time_diff = time() - start_time
         
@@ -247,7 +251,6 @@ def init():
         
         
         # Tracking
-        
         # Multilateration: R = anzahl radare und T = Anzahl Ziele
         # Wir haben T^R mögliche Positionen für Ziele und insgesamt
         # T*R verschiedene TOA
@@ -257,10 +260,9 @@ def init():
         max_i = [scipy.signal.find_peaks(H_abs_db[:, num], height=min_height, prominence=prominence, width=width)[0] for num in range(num_transceivers)]
         dists = [R_range[max_i[num]] for num in range(len(max_i))]
         # with this function, ``find_peaks()`` we get also some other information, which we filter out by only taking the 0th element of the list
-        
+        possible_targets = np.array([], dtype=np.float64, ndmin=2).reshape(0, 3)
         # Multilateration calculation analytically with least squares
         possible_combinations = list(product(*dists))
-        possible_targets = np.array([]).reshape(0, 3)
         for poss_comb in possible_combinations:
             b = np.array([])
             for tr in range(num_transceivers-1):
@@ -273,24 +275,23 @@ def init():
         # Drawing the circles
         if (circle_show):
             circle_ax.cla()
-            circle_ax.set_xlim((-20, 20))
-            circle_ax.set_ylim((-20, 20))
+            circle_ax.set_xlim((-40, 40))
+            circle_ax.set_ylim((-40, 40))
             for i_tr in range(num_transceivers):
                 for i_tar in range(len(dists[i_tr])):
                     circle = plt.Circle((tr_pos[i_tr][0], tr_pos[i_tr][1]), dists[i_tr][i_tar], fill=False, color=colors[i_tar])
                     circle_ax.add_patch(circle)
             
-            circle_fig.canvas.draw()
+            circle_fig.canvas.draw_idle()
             circle_fig.canvas.flush_events()
         
         
         
-        # Redrawing Targets
-        plots_targ.set_offsets([tars[i].get_pos()[:2] for i in range(len(tars))])
+        # Redrawing Map (targets)
         [text.set_position(tars[num].get_pos()[:2] + text_offset) for num, text in enumerate(targ_texts)]
-         
-        fig_elements.canvas.draw()
-        fig_elements.canvas.flush_events()
+        sc_tar_map.set_offsets([tars[i].get_pos()[:2] for i in range(len(tars))])
+        sc_est_map.set_offsets(possible_targets[:, :2])
+        fig_map.canvas.draw_idle()
         
         # Wait for a time before updating
         sleep(wait_time)
