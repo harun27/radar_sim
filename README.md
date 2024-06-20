@@ -4,6 +4,7 @@ This repository is about the simulation of multiple moving object tracking using
 Done: 
 - Simulation of movement
 - Simulation of radars and signal processing
+- Localization of a single object
 
 Todo
 - Localization of multiple objects
