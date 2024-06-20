@@ -8,6 +8,7 @@ Done:
 
 Todo
 - Localization of multiple objects
+- Implement Gauss-Newton Method to reduce the errors
 - Tracking:
   - Filtering (Kalman?)
   - Data Association
