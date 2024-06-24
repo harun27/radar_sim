@@ -5,12 +5,12 @@ Done:
 - Simulation of movement
 - Simulation of radars and signal processing
 - Localization of a single object
+- Localization of multiple objects
 
 Todo
-- Localization of multiple objects
-- Investigate not only the reflexions but also the transmissions
+- Investigate not only the reflexions but also the transmissions (think of a microphone array and how you can calculate the angle with the delay between the microphones)
 - Plot the errors
-- Implement Gauss-Newton Method to reduce the errors
+- Implement Gauss-Newton Method to reduce the errors or WLLS (Weightes Linear Least Squares)
 - Tracking:
   - Filtering (Kalman?)
   - Data Association

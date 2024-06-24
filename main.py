@@ -6,6 +6,7 @@ Created on Thu Nov  9 18:52:11 2023
 """
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
 import numpy as np
 import scipy
 from time import time, sleep
@@ -160,7 +161,7 @@ def init():
     
     
     # Setting up the targets
-    tar_pos = np.array([[0, 0, 0], [-3, 2, 0]], dtype=np.float64, ndmin=2)
+    tar_pos = np.array([[0, 0, 0], [-3, 2, 0], [0, 0.1, 0]], dtype=np.float64, ndmin=2)
     num_targets = tar_pos.shape[0]
     t_text = []
     tars = []
@@ -206,7 +207,7 @@ def init():
     
     # Define Movements
     movements = []
-    # movements.append(Movement(*tars[0].get_pos(), T).circular_movement(5, 30))
+    movements.append(Movement(*tars[2].get_pos(), T).circular_movement(5, 30))
     movements.append(Movement(*tars[0].get_pos(), T).linear_movement(0.3, -0.2, 0))
     movements.append(Movement(*tars[1].get_pos(), T).constant())
     
@@ -260,27 +261,52 @@ def init():
         max_i = [scipy.signal.find_peaks(H_abs_db[:, num], height=min_height, prominence=prominence, width=width)[0] for num in range(num_transceivers)]
         dists = [R_range[max_i[num]] for num in range(len(max_i))]
         # with this function, ``find_peaks()`` we get also some other information, which we filter out by only taking the 0th element of the list
-        possible_targets = np.array([], dtype=np.float64, ndmin=2).reshape(0, 3)
-        # Multilateration calculation analytically with least squares
+        possible_targets = np.array([], dtype=np.float64, ndmin=2).reshape(0, 4) # here all the coordinates of the possible targets are put in the first 3 columns (x, y, z). The 4th column is used to store the cost function value
+        
+        # Multilateration calculation analytically with linear least squares
         possible_combinations = list(product(*dists))
         for poss_comb in possible_combinations:
-            b = np.array([])
+            b = np.array([]).reshape(0, 1)
             for tr in range(num_transceivers-1):
                 b = np.append(b, (poss_comb[tr]**2 - poss_comb[-1]**2) - np.sum(np.power(tr_pos[tr], 2)) + np.sum(np.power(tr_pos[-1], 2)))
             
             coordinate = np.dot(np.matmul(np.linalg.inv(np.matmul(A.T, A)), A.T), b)
-            possible_targets = np.vstack((possible_targets, np.append(coordinate, 0)))
+            
+            # here i want to understand, why the cost_function is like always 0. so i tried to plot the optimization process
+            plot_optimization = False
+            if (plot_optimization):
+                x = y = np.linspace(-4, 4, 50)
+                X, Y = np.meshgrid(x, y)
+                fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+                Z = np.dot((np.dot(A, np.array([x, y])) - b.reshape(2, 1)).T, np.dot(A, np.array([x, y])) - b.reshape(2, 1))
+                surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm, antialiased=False)
+                
+                #fig.colorbar(surf, shrink=0.5, aspect=5)
+                plt.show()
+                
+            # I implement a more trivial cost function. It is the one used for NLLS
+            # r: range measurement
+            # f: predicted ranges
+            r = poss_comb
+            f = np.sqrt(np.sum(np.power(coordinate - tr_pos[:, :2], 2), axis=1))
+            cost_function = np.dot((r-f).T, (r-f))
+            
+            possible_targets = np.vstack((possible_targets, np.append(coordinate, [0, cost_function])))
         
+        # set the threshold to filter out the targets
+        threshold = 1e-2
+        possible_targets = possible_targets[possible_targets[:, 3] < threshold]
         
         # Drawing the circles
         if (circle_show):
             circle_ax.cla()
-            circle_ax.set_xlim((-40, 40))
-            circle_ax.set_ylim((-40, 40))
             for i_tr in range(num_transceivers):
                 for i_tar in range(len(dists[i_tr])):
                     circle = plt.Circle((tr_pos[i_tr][0], tr_pos[i_tr][1]), dists[i_tr][i_tar], fill=False, color=colors[i_tar])
                     circle_ax.add_patch(circle)
+            circle_ax.grid(True)
+            circle_ax.set_xlim((-30, 30))
+            circle_ax.set_ylim((-30, 30))
             
             circle_fig.canvas.draw_idle()
             circle_fig.canvas.flush_events()
