@@ -271,29 +271,17 @@ def init():
                 b = np.append(b, (poss_comb[tr]**2 - poss_comb[-1]**2) - np.sum(np.power(tr_pos[tr], 2)) + np.sum(np.power(tr_pos[-1], 2)))
             
             coordinate = np.dot(np.matmul(np.linalg.inv(np.matmul(A.T, A)), A.T), b)
-            
-            # here i want to understand, why the cost_function is like always 0. so i tried to plot the optimization process
-            plot_optimization = False
-            if (plot_optimization):
-                x = y = np.linspace(-4, 4, 50)
-                X, Y = np.meshgrid(x, y)
-                fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-                Z = np.dot((np.dot(A, np.array([x, y])) - b.reshape(2, 1)).T, np.dot(A, np.array([x, y])) - b.reshape(2, 1))
-                surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm, antialiased=False)
                 
-                #fig.colorbar(surf, shrink=0.5, aspect=5)
-                plt.show()
-                
-            # I implement a more trivial cost function. It is the one used for NLLS
-            # r: range measurement
-            # f: predicted ranges
+            # Cost function. Look how far away the predicted and measured ranges are with L2-Loss
+            # r: range measurement.
+            # f: predicted ranges. predicted coordinate minus transceiver pos
             r = poss_comb
             f = np.sqrt(np.sum(np.power(coordinate - tr_pos[:, :2], 2), axis=1))
             cost_function = np.dot((r-f).T, (r-f))
             
             possible_targets = np.vstack((possible_targets, np.append(coordinate, [0, cost_function])))
         
-        # set the threshold to filter out the targets
+        # set the threshold to filter out the targets. this shall be adaptive later
         threshold = 1e-2
         possible_targets = possible_targets[possible_targets[:, 3] < threshold]
         
