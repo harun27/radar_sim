@@ -6,7 +6,6 @@ Created on Thu Nov  9 18:52:11 2023
 """
 
 import matplotlib.pyplot as plt
-from matplotlib import cm
 import numpy as np
 import scipy
 from time import time, sleep
