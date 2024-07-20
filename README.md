@@ -52,9 +52,7 @@
     - A novel algorithm was used to locate multiple passive targets
     - The LLS algorithm was calculated for every combination of distances, yielding $T^R$ positions where $T$ is the number of targets and $R$ the number of radars / transceivers.
     - To filter out the less probable targets, a cost was calculated based on the predicted positions and the distances measured:
-    
 $$c_j = \sum_{i=0}^{T} (m_{i,j} - p_{i,j})^2$$
-    
     - with the index $j \in [0, T^R]$ for every prediction where $m_{i,j}$ is the measured distance from radar $i$ to the prediction $j$. The measured distance is subtracted from the predicted distance to that target $p_{i,j}$. This is repeated for every target $i$ for a specific prediction $j$. This cost is stored for each prediction $j$ and should be as low as possible (ideally 0). The true predictions are filtered out based on this cost by a threshold value for now.
 - Code cleanup
 - Integrated Keyboard controls for the simulation
