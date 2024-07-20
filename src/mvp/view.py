@@ -6,6 +6,8 @@ Created on Mon Jul  1 14:39:53 2024
 """
 
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('TkAgg')
 
 class View:
     def __init__(self, trans_pos):
@@ -25,7 +27,8 @@ class View:
         plt.grid(True)
         plt.xlabel('x-position [m]')
         plt.ylabel('y-position [m]')
-        plt.show()
+        #plt.ion()
+        plt.show(block=False)
         
     
     def step(self, estimations, ground_truth):
@@ -35,3 +38,9 @@ class View:
         self.map_estim.set_offsets(estimations[:2, :].T)
         self.map_fig.canvas.draw_idle()
         plt.pause(0.05)
+        
+    def close(self):
+        print("Closing Figures")
+        plt.close('all')
+        print("Closed Figures")
+        

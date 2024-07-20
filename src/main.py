@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-q
 """
 Created on Mon Jul  1 19:38:51 2024
 
@@ -10,4 +10,5 @@ from mvp.presenter import Presenter
 presenter = Presenter()
 
 while(1):
-    presenter.run()
+    if not presenter.run():
+        break
