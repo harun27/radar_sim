@@ -13,13 +13,14 @@ from .view import View
 
 class Presenter:
     def __init__(self):
-        self.model = Model()
-        self.view = View(self.model.trans_pos)
         self.update_time = 0.1 # seconds until the plot is reloaded and new steps are calculated
         self.last = time()
         self.running = True
         self.step = False
         self.quit = False
+        self.verbose = True
+        self.model = Model()
+        self.view = View(self.model.trans_pos, self.verbose)
         keyboard.on_press(self.__on_key_event)
         
     def __on_key_event(self, e):
@@ -31,7 +32,6 @@ class Presenter:
             print("pause")
         if e.name == 'q':
             print("quit")
-            self.view.close()
             self.quit = True
             keyboard.unhook_all()
         if e.name == 's':
@@ -41,14 +41,15 @@ class Presenter:
     def run(self):
         
         if (((time() - self.last) > self.update_time) and self.running) or self.step:
-            self.model.step()
-            self.view.step(self.model.estimations, self.model.ground_truth)
+            self.model.step(self.verbose)
+            self.view.step(self.model.estimations, self.model.ground_truth, self.verbose, y_raw=self.model.raw_radar, x_raw=self.model.raw_radar_range, idx_raw=self.model.max_i)
             self.last = time()
             self.step = False
         else:
-            pass
+            self.view.draw()
         
         if self.quit:
+            self.view.close()
             return False
         else:
             return True

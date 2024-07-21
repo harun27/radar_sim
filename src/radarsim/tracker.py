@@ -70,7 +70,7 @@ class Tracker:
         H = np.abs(H[:int(len_fft/2), :])
         
         # return it in the dB 
-        return 20*np.log10(H)
+        return 20*np.log10(np.abs(H))
     
     
     def __multilateration(self, dists, trans_pos, num_transceivers):
@@ -109,7 +109,7 @@ class Tracker:
         return possible_targets
         
     
-    def localize(self, H, B, trans_pos):
+    def localize(self, H, B, trans_pos, verbose=False):
         
         H_db = self.__preprocessing(H, B)
         
@@ -127,7 +127,10 @@ class Tracker:
         # Set the threshold to filter out the targets. this shall be adaptive later
         threshold = 1e-2
         possible_targets = possible_targets[:, possible_targets[3, :] < threshold]
-        return possible_targets[:3, :]
+        if verbose:
+            return possible_targets[:3, :], H_db, self.R_range, max_i
+        else:
+            return possible_targets[:3, :]
         
     
     def track(self):

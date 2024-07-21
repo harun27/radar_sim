@@ -19,9 +19,11 @@
 
 # Kanban Plan
 ## Todo
+- Refine the FMCW signal theory
+- Optimize the maximum finding algorithm
+- Train an NN to have an adaptive threshold to choose the correct targets after MLAT
 - Implement Gauss-Newton Algorithm to reduce the errors or WLLS (Weightes Linear Least Squares)
 - Use a NN
-- Refine the FMCW signal theory
 - Tackle NLOS (Non-Line-Of-Sight) issues (there is a paper doing this with NN)
 - Use RSS?
 - Use velocity too? Do we have a simple LFMCW radar or something more advanced like CW-LFMCW? Do we have different modulation techniques?
@@ -37,11 +39,10 @@
         - we combine multiple sensors (f.e. if we can measure the velocity too)
 
 ## Doing
-- Plot the errors and raw radar signal with the chosen maxima
-- Optimize the maximum finding algorithm
 - Tracking:
     - Clustering: Fuse the same target points to one single target
     - Data Association: Associate targets to tracks. Also initiate or delete tracks
+- Plot Errors for Tracks
 
 ## Done 
 - Simulation of movement
@@ -56,6 +57,7 @@ $$c_j = \sum_{i=0}^{T} (m_{i,j} - p_{i,j})^2$$
     - with the index $j \in [0, T^R]$ for every prediction where $m_{i,j}$ is the measured distance from radar $i$ to the prediction $j$. The measured distance is subtracted from the predicted distance to that target $p_{i,j}$. This is repeated for every target $i$ for a specific prediction $j$. This cost is stored for each prediction $j$ and should be as low as possible (ideally 0). The true predictions are filtered out based on this cost by a threshold value for now.
 - Code cleanup
 - Integrated Keyboard controls for the simulation
+- Plot the raw radar signal with the chosen maxima
 
 
 # Project Structure

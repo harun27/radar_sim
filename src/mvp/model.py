@@ -17,6 +17,7 @@ class Model:
         self.__init_nodes()
         self.tracker = Tracker()
         self.__dT = 0.1 # 1s
+        self.raw_radar = self.raw_radar_range = self.max_i = None
         
     ##########
     ## Getters
@@ -72,10 +73,13 @@ class Model:
                 H = np.hstack((H, transceiver.measure_targets(Target.all)))
         return H
         
-    def step(self):
+    def step(self, verbose=False):
         self.__move_all_targets(self.dT)
         H = self.__measure_all_transceivers()
-        self.__estimations = self.tracker.localize(H, Transceiver.B, self.trans_pos)
+        if verbose:
+            self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i = self.tracker.localize(H, Transceiver.B, self.trans_pos, verbose)
+        else:
+            self.__estimations = self.tracker.localize(H, Transceiver.B, self.trans_pos)
         
         
         
