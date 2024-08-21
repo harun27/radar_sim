@@ -64,7 +64,7 @@ class Model:
             target.next_pos(dT)
             self.__ground_truth[:, i] = target.position.flatten()
             
-    def __measure_all_transceivers(self):
+    def __measure_wall_transceivers(self):
         H = None
         for i, transceiver in enumerate(Transceiver.all):
             if i == 0:
@@ -75,11 +75,11 @@ class Model:
         
     def step(self, verbose=False):
         self.__move_all_targets(self.dT)
-        H = self.__measure_all_transceivers()
+        H = self.__measure_wall_transceivers()
         if verbose:
-            self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i = self.tracker.localize(H, Transceiver.B, self.trans_pos, verbose)
+            self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i = self.tracker.track(H, Transceiver.BW, self.trans_pos, verbose)
         else:
-            self.__estimations = self.tracker.localize(H, Transceiver.B, self.trans_pos)
+            self.__estimations = self.tracker.track(H, Transceiver.BW, self.trans_pos)
         
         
         

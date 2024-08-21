@@ -14,8 +14,8 @@ class Transceiver(Node):
     all = []
     f_start = 110e9
     f_stop = 170e9
-    B = abs(f_stop - f_start)
-    # B: Bandbreite des Frequenzsweeps
+    BW = abs(f_stop - f_start)
+    # BW: Bandwidth of the frequency modulation / sweep
     T = 300e-9
     # T: Periodendauer des Frequenzsweeps (definiert die maximale Reichweite). 
     
@@ -25,7 +25,7 @@ class Transceiver(Node):
     def __init__(self, pos):
         super().__init__(pos)
         
-        num_freq_points = int(Transceiver.B * Transceiver.T)
+        num_freq_points = int(Transceiver.BW * Transceiver.T)
         f = np.linspace(Transceiver.f_start, Transceiver.f_stop, num=num_freq_points)
         w = 2 * np.pi * f
         self.__k = (w / scipy.constants.c).reshape(-1, 1)

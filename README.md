@@ -20,6 +20,7 @@
 # Kanban Plan
 ## Todo
 - Refine the FMCW signal theory
+- Implement CFAR (Constant False Alarm Rate) rather than a fixed threshold
 - Optimize the maximum finding algorithm
 - Train an NN to have an adaptive threshold to choose the correct targets after MLAT
 - Implement Gauss-Newton Algorithm to reduce the errors or WLLS (Weightes Linear Least Squares)
@@ -40,7 +41,6 @@
 
 ## Doing
 - Tracking:
-    - Clustering: Fuse the same target points to one single target
     - Data Association: Associate targets to tracks. Also initiate or delete tracks
 - Plot Errors for Tracks
 
@@ -58,6 +58,7 @@ $$c_j = \sum_{i=0}^{T} (m_{i,j} - p_{i,j})^2$$
 - Code cleanup
 - Integrated Keyboard controls for the simulation
 - Plot the raw radar signal with the chosen maxima
+- Clustering: Fuse the same target points to one single target. DBSCAN was used as a first implementation since it allows clusters in arbitrary shape. Further improvements might be to use HDBSCAN* or SDPFC[^tracking_book]
 
 
 # Project Structure
@@ -119,3 +120,41 @@ classDiagram
 			
 		}
 ```
+
+# Footnotes
+[^tracking_book]: Lin Cao et al. (October 2021). Target Recognition and Tracking for Millimeter Wave Radar in Intelligent Transportation
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

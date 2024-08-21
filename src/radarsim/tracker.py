@@ -8,6 +8,7 @@ Created on Mon Jul  1 19:36:15 2024
 import numpy as np
 import scipy
 from itertools import product
+from sklearn.cluster import DBSCAN
 
 class Tracker:
     def __init__(self):
@@ -35,14 +36,14 @@ class Tracker:
         return np.power(2, a+1)
     
     
-    def __preprocessing(self, H, B):
+    def __preprocessing(self, H, BW):
         """Process the measurements
         
         Parameters
         ----------
         H : np.ndarray
             Measurements of all the Transceivers.
-        B : float
+        BW : float
             Bandwidth of the Transmitters.
 
         Returns
@@ -57,7 +58,7 @@ class Tracker:
         len_fft = self.__nearestPowerOf2(len_meas*zero_pad)
         
         # Calculate the Range axis
-        R_range = scipy.constants.c / (np.sqrt(medium) * 2*B) * np.linspace(-len_meas/2, len_meas/2, len_fft)
+        R_range = scipy.constants.c / (np.sqrt(medium) * 2*BW) * np.linspace(-len_meas/2, len_meas/2, len_fft)
         self.__R_range = R_range[int(len_fft/2):]
         
         # Apply window function
@@ -109,9 +110,9 @@ class Tracker:
         return possible_targets
         
     
-    def localize(self, H, B, trans_pos, verbose=False):
+    def localize(self, H, BW, trans_pos, verbose=False):
         
-        H_db = self.__preprocessing(H, B)
+        H_db = self.__preprocessing(H, BW)
         
         num_transceivers = H.shape[1]
         min_height = 0 # dB
@@ -128,16 +129,44 @@ class Tracker:
         threshold = 1e-2
         possible_targets = possible_targets[:, possible_targets[3, :] < threshold]
         if verbose:
-            return possible_targets[:3, :], H_db, self.R_range, max_i
+            return possible_targets, H_db, max_i
         else:
-            return possible_targets[:3, :]
+            return possible_targets
+    
+    
+    def __clustering(self, locs):
+        """Cluster the locations after localization
+        
+
+        Returns
+        -------
+        None.
+
+        """
+        # Parameters for DBSCAN (These parameters may be changed for real data):
+        eps = 0.2 # This is the radius in which points of the cluster should be searched
+        minpts = 1 # This is the minimum number of points a cluster can consist of. Noise points will be clustered, but will be filtered away in data association
+        clusters = DBSCAN(eps=eps, min_samples=minpts).fit(locs[:3, :].T)
+        return np.vstack((locs, clusters.labels_))
+        
+        
+    def __association(self, clustered_locs):
+        pass
         
     
-    def track(self):
-        pass
+    def track(self, H, BW, trans_pos, verbose=False):
+        if verbose: 
+            locations, H_db, max_i = self.localize(H, BW, trans_pos, verbose)
+        else:
+            locations = self.localize(H, BW, trans_pos)
+            
+        clustered_locations = self.__clustering(locations)
+        targets = self.__association(clustered_locations)
     
-    
-    
+        if verbose:
+            return clustered_locations, H_db, self.R_range, max_i
+        else:
+            return clustered_locations[:3, :]
     
     
     
