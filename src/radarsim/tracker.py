@@ -151,7 +151,15 @@ class Tracker:
         
         
     def __association(self, clustered_locs):
-        pass
+        # Reducing the clusters into one single point at the center
+        targets = np.empty((3, 0))
+        num_clusters = np.max(clustered_locs[4, :]) + 1
+        cluster_list = np.arange(0, num_clusters)
+        for c in cluster_list:
+            tmp = np.mean(clustered_locs[:3, clustered_locs[4, :]==c], axis=1).reshape(3, 1)
+            targets = np.hstack((targets, tmp))
+        
+        return targets
         
     
     def track(self, H, BW, trans_pos, verbose=False):
@@ -164,9 +172,9 @@ class Tracker:
         targets = self.__association(clustered_locations)
     
         if verbose:
-            return clustered_locations, H_db, self.R_range, max_i
+            return targets, clustered_locations, H_db, self.R_range, max_i
         else:
-            return clustered_locations[:3, :]
+            return targets
     
     
     

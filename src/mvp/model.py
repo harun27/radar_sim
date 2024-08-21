@@ -31,6 +31,10 @@ class Model:
         return self.__estimations
     
     @property
+    def targets(self):
+        return self.__targets
+    
+    @property
     def ground_truth(self):
         return self.__ground_truth
     
@@ -77,9 +81,9 @@ class Model:
         self.__move_all_targets(self.dT)
         H = self.__measure_wall_transceivers()
         if verbose:
-            self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i = self.tracker.track(H, Transceiver.BW, self.trans_pos, verbose)
+            self.__targets, self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i = self.tracker.track(H, Transceiver.BW, self.trans_pos, verbose)
         else:
-            self.__estimations = self.tracker.track(H, Transceiver.BW, self.trans_pos)
+            self.__targets = self.tracker.track(H, Transceiver.BW, self.trans_pos)
         
         
         

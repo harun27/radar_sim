@@ -18,31 +18,36 @@ class View:
         # Initialize the map plot
         self.num_trans = trans_pos.shape[1]
         self.map_fig, self.map_ax = plt.subplots() # ("Targets and Transceivers")
-        self.map_ax.scatter(*zip(*trans_pos[:2, :].T), marker='x', color='b', label='Transceivers')
-        self.map_gt = self.map_ax.scatter([], [], marker='o', color='k', label='GT Targets', s=100)
-        self.map_estim = self.map_ax.scatter([], [], marker='o', label='Targets', s=30, edgecolors='k') #, alpha=0.8) #, color='c')
         
+        self.map_ax.scatter(*zip(*trans_pos[:2, :].T), marker='x', color='b', label='Transceivers')
         self.__text_offset = 0.5
         for i in range(self.num_trans):
             text = "Tr" + str(i)
             self.map_ax.text(*trans_pos[:2, i].T + self.__text_offset, text)
+        
+        self.map_gt = self.map_ax.scatter([], [], marker='o', color='k', label='GT Targets', s=100, alpha=0.3)
+        
+        if verbose:
+            self.map_estim = self.map_ax.scatter([], [], marker='o', label='Estim', s=30, edgecolors='k', alpha=1)
+            self.map_cluscen = self.map_ax.scatter([], [], marker='x', label='Cluster Center', color='k')
+            
+            # Initalizing raw data plot
+            self.raw_fig, self.raw_ax = plt.subplots(self.num_trans, 1)
+            self.raw_plot = []
+            self.raw_max = []
+            self.raw_text = []
+        
         
         self.map_ax.legend()
         self.map_ax.grid(True)
         self.map_ax.set_xlabel('x-position [m]')
         self.map_ax.set_ylabel('y-position [m]')
         
+        
     
-    def step(self, estimations, ground_truth, verbose=False, **kwargs):
+    def step(self, targets, estimations, ground_truth, verbose=False, **kwargs):
         # Redrawing map plot
         self.map_gt.set_offsets(ground_truth[:2, :].T)
-        self.map_estim.set_offsets(estimations[:2, :].T)
-        self.map_estim.set_array(estimations[4, :])
-        if not self.reinit:
-            self.map_estim.set_cmap('tab20')
-            # note: maximum 20 clusters can be used because of the used colormap
-        
-        self.map_fig.canvas.draw_idle()
         
         # Redrawing verbose plots such as the raw data plot or error plot
         if verbose:
@@ -51,11 +56,11 @@ class View:
                 # These instructions should only be called one time for initialization purposes
                 # After it is done, self.reinit is set to true, meaning that the reinitialization is done
                 
+                ### Initializing map plot
+                self.map_estim.set_cmap('tab20')
+                # note: maximum 20 clusters can be used because of the used colormap
+                
                 ### Initializing Raw data plot
-                self.raw_fig, self.raw_ax = plt.subplots(self.num_trans, 1)
-                self.raw_plot = []
-                self.raw_max = []
-                self.raw_text = []
                 for ax in self.raw_ax:
                     self.raw_plot.append(ax.plot([], [], color='b', label='Raw measurement')[0])
                     self.raw_max.append(ax.scatter([], [], color='k', label='Maxima'))
@@ -67,23 +72,22 @@ class View:
                     ax.set_xlim(0, kwargs['x_raw'][-1])
                     ax.set_ylim(-200, 100) # max(kwargs['y_raw'][:, i]))
                 
-                ### Initializing Error Plot
-                # self.error_fig, self.error_ax = plt.subplots(ground_truth.shape[1], 1)
-                
                 self.reinit = True
-
             
-            for i in range(self.num_trans):                    
-                ## Redrawing Raw plot
+            ## Redrawing verbose things on the map plot
+            self.map_estim.set_offsets(estimations[:2, :].T)
+            self.map_estim.set_array(estimations[4, :])
+            self.map_cluscen.set_offsets(targets.T)
+            
+            ## Redrawing Raw plot
+            for i in range(self.num_trans):                        
                 self.raw_text[i].set_text("Maxima: " + str(kwargs['x_raw'][kwargs['idx_raw'][i]]))
                 self.raw_plot[i].set_data(kwargs['x_raw'], kwargs['y_raw'][:, i])
                 self.raw_max[i].set_offsets(np.array([kwargs['x_raw'][kwargs['idx_raw'][i]], kwargs['y_raw'][kwargs['idx_raw'][i], i]]).T)
                 
-                ## Redrawing Error Plot
-                
-                
             self.raw_fig.canvas.draw_idle()
         
+        self.map_fig.canvas.draw_idle()
         self.draw()
     
     def draw(self):
