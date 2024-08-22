@@ -21,26 +21,19 @@
 ## Todo
 - Refine the FMCW signal theory
 - Implement CFAR (Constant False Alarm Rate) rather than a fixed threshold
+- Train an NN to have an adaptive threshold
+- Use a NN for tracking
 - Optimize the maximum finding algorithm
-- Train an NN to have an adaptive threshold to choose the correct targets after MLAT
 - Implement Gauss-Newton Algorithm to reduce the errors or WLLS (Weightes Linear Least Squares)
-- Use a NN
 - Tackle NLOS (Non-Line-Of-Sight) issues (there is a paper doing this with NN)
 - Use RSS?
 - Use velocity too? Do we have a simple LFMCW radar or something more advanced like CW-LFMCW? Do we have different modulation techniques?
-- Filtering:
-    - Filtering (Kalman-Filter or Particle Filter) are not of high priority because:
-        - we have a very precice sensor (radar)
-        - we have only one sensor (if you class the radar system as 1 sensor for the location), so no sensor fusion has to be applied
-        - we don't have any knowledge of the state transition model (we don't know anything about the movement type. Any target could move arbitrarily)
-    - Filtering might still be helpful if:
-        - we occasionally loose the target
-        - in the real system, the noise is higher
-        - we have model knowledge f.e. in the real system
-        - we combine multiple sensors (f.e. if we can measure the velocity too)
+- TBD (Track before detect) instead of DBT (Detect before track)?
+
 
 ## Doing
 - Tracking:
+    - Filtering: Smooth out the targets. Make predictions to have uncertainties about tracks
     - Data Association: Associate targets to tracks. Also initiate or delete tracks
 - Plot Errors for Tracks
 
@@ -48,7 +41,7 @@
 - Simulation of movement
 - Simulation of radars and signal processing
 - Localization of a single object
-    - The LLS algorithm was used for the multilateration problem
+    - The LLS algorithm was used for the multilateration problem[^loc_book][^multilat_paper]
 - Localization of multiple objects
     - A novel algorithm was used to locate multiple passive targets
     - The LLS algorithm was calculated for every combination of distances, yielding $T^R$ positions where $T$ is the number of targets and $R$ the number of radars / transceivers.
@@ -123,6 +116,8 @@ classDiagram
 
 # Footnotes
 [^tracking_book]: Lin Cao et al. (October 2021). Target Recognition and Tracking for Millimeter Wave Radar in Intelligent Transportation
+[^loc_book]: S. A. (Reza) Zekavat and R. Micheal Buehrer (2019). Handbook of Position Localization. Theory, Practice, and Advances
+[^multilat_paper]: Vinh Tran-Quang et al. (2013). Target Tracking System using Lateration Estimation Method in Wireless Sensor Networks
 
 
 

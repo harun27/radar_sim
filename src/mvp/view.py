@@ -28,7 +28,7 @@ class View:
         self.map_gt = self.map_ax.scatter([], [], marker='o', color='k', label='GT Targets', s=100, alpha=0.3)
         
         if verbose:
-            self.map_estim = self.map_ax.scatter([], [], marker='o', label='Estim', s=30, edgecolors='k', alpha=1)
+            self.map_estim = self.map_ax.scatter([], [], marker='o', label='Clusters', s=30, edgecolors='k', alpha=1)
             self.map_cluscen = self.map_ax.scatter([], [], marker='x', label='Cluster Center', color='k')
             
             # Initalizing raw data plot

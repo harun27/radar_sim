@@ -10,6 +10,26 @@ import scipy
 from itertools import product
 from sklearn.cluster import DBSCAN
 
+class Track:
+    status_type = {'tentative': 0, 'terminated': 1, 'confirmed': 2}
+    all = []
+    def __init__(self, pos):
+        self.status = Track.status_type['tentative']
+        self.__state = np.array(pos).reshape(3, 1)
+        Track.all.append(self)
+        
+        
+    @property
+    def state(self):
+        return self.__state
+        
+    def remove(self):
+        Track.all.remove(self)
+        
+    def remove_all():
+        Track.all = []
+    
+
 class Tracker:
     def __init__(self):
         pass
@@ -148,6 +168,9 @@ class Tracker:
         minpts = 1 # This is the minimum number of points a cluster can consist of. Noise points will be clustered, but will be filtered away in data association
         clusters = DBSCAN(eps=eps, min_samples=minpts).fit(locs[:3, :].T)
         return np.vstack((locs, clusters.labels_))
+    
+    def __filtering(self):
+        pass
         
         
     def __association(self, clustered_locs):
@@ -158,6 +181,11 @@ class Tracker:
         for c in cluster_list:
             tmp = np.mean(clustered_locs[:3, clustered_locs[4, :]==c], axis=1).reshape(3, 1)
             targets = np.hstack((targets, tmp))
+        
+        
+        
+        #row, col = scipy.optimize.linear_sum_assignment(cost_matrix)
+        #cost_matrix[row, col]
         
         return targets
         
