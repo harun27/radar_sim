@@ -12,3 +12,4 @@ presenter = Presenter()
 while(1):
     if not presenter.run():
         break
+

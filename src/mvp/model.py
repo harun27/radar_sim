@@ -16,7 +16,7 @@ class Model:
     def __init__(self):
         self.__init_nodes()
         self.tracker = Tracker()
-        self.__dT = 0.1 # 1s
+        self.__dT = 0.1 # s
         self.raw_radar = self.raw_radar_range = self.max_i = None
         
     ##########
@@ -48,20 +48,24 @@ class Model:
         tar2_pos = [-5, 5, 0]
         tar3_pos = [3, -3, 0]
         
-        tar1 = Target(tar1_pos, 'constant')
-        tar2 = Target(tar2_pos, 'linear', speed=0.5, direction=[1, -1, 0])
-        tar3 = Target(tar3_pos, 'circular', speed=1, diameter=2)
+        # Target(tar1_pos, 'constant')
+        Target(tar2_pos, 'linear', speed=1, direction=[1, -1, 0])
+        # Target(tar3_pos, 'circular', speed=1, diameter=2)
         
         trans1_pos = [0, -10, 0] 
         trans2_pos = [10, 10, 0]
         trans3_pos = [-10, 10, 0]
         
-        trans1 = Transceiver(trans1_pos)
-        trans2 = Transceiver(trans2_pos)
-        trans3 = Transceiver(trans3_pos)
+        noise = .15
         
-        self.__trans_pos = np.hstack((trans1.position, trans2.position, trans3.position))
-        self.__ground_truth = np.hstack((tar1.position, tar2.position, tar3.position))
+        Transceiver(trans1_pos, noise)
+        Transceiver(trans2_pos, noise)
+        Transceiver(trans3_pos, noise)
+        
+        self.__trans_pos = np.hstack([trans.position for trans in Transceiver.all])
+        self.__ground_truth = np.hstack([tar.position for tar in Target.all])
+        #self.__ground_truth = np.hstack((tar1.position, tar2.position))
+        # self.__ground_truth = tar2.position
     
     def __move_all_targets(self, dT):
         for i, target in enumerate(Target.all):
@@ -81,9 +85,9 @@ class Model:
         self.__move_all_targets(self.dT)
         H = self.__measure_wall_transceivers()
         if verbose:
-            self.__targets, self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i = self.tracker.track(H, Transceiver.BW, self.trans_pos, verbose)
+            self.__targets, self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i, self.kf_targets = self.tracker.track(H, Transceiver.BW, self.trans_pos, self.dT, verbose)
         else:
-            self.__targets = self.tracker.track(H, Transceiver.BW, self.trans_pos)
+            self.__targets = self.tracker.track(H, Transceiver.BW, self.trans_pos, self.dT)
         
         
         

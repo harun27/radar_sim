@@ -9,15 +9,66 @@ import numpy as np
 import matplotlib
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
+
+class DynamicEllipsePlot:
+    def __init__(self, ax):
+        self.ax = ax
+        self.ellipse = None
+
+    def plot_covariance_ellipse(self, mean, cov, conf_perc=0.95, facecolor='none', **kwargs):
+        """
+        Plots the covariance ellipse of a Gaussian distribution.
+        
+        Parameters:
+        mean : array_like, shape (2,)
+            The mean (center) of the Gaussian distribution.
+        cov : array_like, shape (2, 2)
+            The 2x2 covariance matrix.
+        conf_perc : float
+            The percentage of the confidence interval
+        facecolor : str
+            The fill color of the ellipse.
+        **kwargs : additional keyword arguments
+            Passed to matplotlib.patches.Ellipse.
+        """
+        # Remove the previous ellipse if it exists
+        if self.ellipse:
+            self.ellipse.remove()
+
+        # Eigenvalues and eigenvectors of the covariance matrix
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        
+        # Sort eigenvalues and eigenvectors by descending eigenvalue
+        order = eigvals.argsort()[::-1]
+        eigvals = eigvals[order]
+        eigvecs = eigvecs[:, order]
+        
+        # Calculate the angle of rotation for the ellipse
+        angle = np.degrees(np.arctan2(*eigvecs[:, 0][::-1]))
+        
+        # Width and height of the ellipse are 2 * n_std * sqrt(eigenvalue)
+        conf_factor = np.sqrt(-2 * np.log(1 - conf_perc))
+        width, height = 2 * conf_factor * np.sqrt(eigvals)
+        # The factor of 2 is necessary because the Ellipse object in matplotlib expects the full width and height
+        
+        # Create the ellipse patch
+        self.ellipse = Ellipse(xy=mean, width=width, height=height, angle=angle, facecolor=facecolor, **kwargs)
+        
+        # Add the ellipse to the plot
+        self.ax.add_patch(self.ellipse)
 
 class View:
-    def __init__(self, trans_pos, verbose=False):
+    def __init__(self, trans_pos, dT, verbose=False):
+        self.dT = dT
+        
         # Some plots may need to reinitialize in the step() funciton, if done, this can be set to True
         self.reinit = False
         
         # Initialize the map plot
         self.num_trans = trans_pos.shape[1]
         self.map_fig, self.map_ax = plt.subplots() # ("Targets and Transceivers")
+        self.map_ax.set_title("Iteration " + str(0) + "\nTime: " + str(0) + "s")
         
         self.map_ax.scatter(*zip(*trans_pos[:2, :].T), marker='x', color='b', label='Transceivers')
         self.__text_offset = 0.5
@@ -30,6 +81,7 @@ class View:
         if verbose:
             self.map_estim = self.map_ax.scatter([], [], marker='o', label='Clusters', s=30, edgecolors='k', alpha=1)
             self.map_cluscen = self.map_ax.scatter([], [], marker='x', label='Cluster Center', color='k')
+            self.map_kf = self.map_ax.scatter([], [], marker='x', label='KF Estimation', color='g')
             
             # Initalizing raw data plot
             self.raw_fig, self.raw_ax = plt.subplots(self.num_trans, 1)
@@ -43,11 +95,14 @@ class View:
         self.map_ax.set_xlabel('x-position [m]')
         self.map_ax.set_ylabel('y-position [m]')
         
+        self.ellipse_plot = DynamicEllipsePlot(self.map_ax)
+        
         
     
-    def step(self, targets, estimations, ground_truth, verbose=False, **kwargs):
+    def step(self, targets, estimations, ground_truth, iter_num, verbose=False, **kwargs):
         # Redrawing map plot
         self.map_gt.set_offsets(ground_truth[:2, :].T)
+        self.map_ax.set_title("Iteration " + str(iter_num) + "\nTime: " + str(iter_num*self.dT) + "s")
         
         # Redrawing verbose plots such as the raw data plot or error plot
         if verbose:
@@ -75,9 +130,17 @@ class View:
                 self.reinit = True
             
             ## Redrawing verbose things on the map plot
-            self.map_estim.set_offsets(estimations[:2, :].T)
-            self.map_estim.set_array(estimations[4, :])
-            self.map_cluscen.set_offsets(targets.T)
+            if estimations.size != 0:
+                self.map_estim.set_offsets(estimations[:2, :].T)
+                self.map_estim.set_array(estimations[4, :])
+                self.map_cluscen.set_offsets(targets.T)
+                
+            kf_targets = kwargs['kf_targets']
+            for i, tar in enumerate(kf_targets):
+                mean = tar[0][:2]
+                C = tar[1][:2, :2]
+                self.map_kf.set_offsets(mean)
+                self.ellipse_plot.plot_covariance_ellipse(mean, C, facecolor='b', alpha=0.1)
             
             ## Redrawing Raw plot
             for i in range(self.num_trans):                        
@@ -89,6 +152,8 @@ class View:
         
         self.map_fig.canvas.draw_idle()
         self.draw()
+        
+        
     
     def draw(self):
         ## This function redraws the figures. This is either used directly from the self.step() method
@@ -102,4 +167,67 @@ class View:
         print("Closing Figures")
         plt.close('all')
         print("Closed Figures")
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         

@@ -9,19 +9,89 @@ import numpy as np
 import scipy
 from itertools import product
 from sklearn.cluster import DBSCAN
+from filterpy.kalman import KalmanFilter
+from filterpy.kalman import IMM
+from filterpy.common import Q_discrete_white_noise
+
 
 class Track:
     status_type = {'tentative': 0, 'terminated': 1, 'confirmed': 2}
     all = []
-    def __init__(self, pos):
+    
+    def __init__(self, position):
         self.status = Track.status_type['tentative']
-        self.__state = np.array(pos).reshape(3, 1)
+        self.__pos = np.array(position).reshape(3, 1)
+        self.filters = None # np.array([])
+        #self.IMM = None
         Track.all.append(self)
-        
+    
+    @property
+    def pos(self):
+        return self.__pos
         
     @property
     def state(self):
         return self.__state
+    
+    def new_position(self, new_pos, dT):
+        self.__pos = np.hstack((self.pos, new_pos.reshape(3, 1)))
+        
+        if self.status == Track.status_type['tentative'] and self.filters == None:
+            self.status = Track.status_type['confirmed']
+            v = [0, 0, 0] # (self.pos[:, -1] - self.pos[:, -2]) / dT
+            a = [0, 0, 0]
+            w = 0
+            self.__state = np.append(np.dstack((new_pos, v, a)).flatten(), w)
+            self.init_filter(dT)
+        else:
+            self.filters.predict()
+            self.filters.update(new_pos)
+            
+    def init_filter(self, dT):
+        ## Variables used by all the filters
+        dim_x = 10
+        dim_z = 3
+        
+        H = np.zeros((3, 10))
+        H[0, 0] = H[1, 3] = H[2, 6] = 1
+        
+        Q = Q_discrete_white_noise(dim=3, dt=dT, var=1e-3, block_size=3)
+        Q = np.vstack((Q, np.zeros((1, Q.shape[1]))))
+        Q = np.hstack((Q, np.zeros((Q.shape[0], 1))))
+        
+        ## Constant velocity filter
+        lin_filter = KalmanFilter(dim_x=dim_x, dim_z=dim_z)
+        
+        lin_filter.x = self.state
+        
+        lin_filter.H = H
+        
+        F_lin = np.kron(np.eye(3), np.array([[1, dT, dT**2/2], [0, 1, dT], [0, 0, 1]]))
+        F_lin = np.vstack((F_lin, np.zeros((1, F_lin.shape[1]))))
+        F_lin = np.hstack((F_lin, np.zeros((F_lin.shape[0], 1))))
+        lin_filter.F = F_lin
+        
+        lin_filter.R *= 1
+        lin_filter.P *= 5
+        
+        
+        b = 0
+        Q[-1, -1] = b * dT
+        lin_filter.Q = Q
+        
+        self.filters = lin_filter
+        
+        ## Constant Turn Filter 1
+        # turn_filter = KalmanFilter(dim_x=10, dim_z=3)
+        
+        # turn_filter.x = self.state
+        # turn_filter.H = H
+        
+        # F_turn = np.zeros((dim_x, dim_x))
+        # F_turn[0, 0] = 1
+        # F_turn[]
+        
+            
         
     def remove(self):
         Track.all.remove(self)
@@ -164,43 +234,74 @@ class Tracker:
 
         """
         # Parameters for DBSCAN (These parameters may be changed for real data):
-        eps = 0.2 # This is the radius in which points of the cluster should be searched
+        eps = 0.3 # This is the radius in which points of the cluster should be searched
         minpts = 1 # This is the minimum number of points a cluster can consist of. Noise points will be clustered, but will be filtered away in data association
         clusters = DBSCAN(eps=eps, min_samples=minpts).fit(locs[:3, :].T)
         return np.vstack((locs, clusters.labels_))
     
-    def __filtering(self):
-        pass
+    def __filtering(self, targets, dT):
+        kf_targets = []
+        
+        if len(Track.all) == 0:
+            if targets.size != 0:
+                Track(targets[:3, 0])
+        else:
+            for i, track in enumerate(Track.all):
+                    if targets.size != 0:
+                        track.new_position(targets[:3, i], dT)
+                    elif track.status == Track.status_type['confirmed']:
+                        track.filters.predict()
+                    else:
+                        continue
+                        
+                        
+                    x = track.filters.x
+                    x = np.hstack((track.filters.x[:-1:3], track.filters.x[1::3], track.filters.x[2::3], track.filters.x[-1]))
+                    
+                    P = track.filters.P
+                    P = np.vstack((P[:-1:3, :], P[1::3, :], P[2::3, :], P[-1, :]))
+                    P = np.hstack((P[:, :-1:3], P[:, 1::3], P[:, 2::3], P[:, -1].reshape(-1, 1)))
+                    
+                    kf_targets.append((x, P))
+                
+                
+        return kf_targets
         
         
-    def __association(self, clustered_locs):
+    def __association(self, clustered_locs, dT):
         # Reducing the clusters into one single point at the center
-        targets = np.empty((3, 0))
+        targets = np.empty((4, 0))
         num_clusters = np.max(clustered_locs[4, :]) + 1
         cluster_list = np.arange(0, num_clusters)
         for c in cluster_list:
-            tmp = np.mean(clustered_locs[:3, clustered_locs[4, :]==c], axis=1).reshape(3, 1)
+            tmp = np.mean(clustered_locs[:4, clustered_locs[4, :]==c], axis=1).reshape(4, 1)
             targets = np.hstack((targets, tmp))
         
         
         
+        kf_targets = self.__filtering(targets, dT)
+        
         #row, col = scipy.optimize.linear_sum_assignment(cost_matrix)
         #cost_matrix[row, col]
         
-        return targets
+        return targets, kf_targets
         
     
-    def track(self, H, BW, trans_pos, verbose=False):
+    def track(self, H, BW, trans_pos, dT, verbose=False):
         if verbose: 
             locations, H_db, max_i = self.localize(H, BW, trans_pos, verbose)
         else:
             locations = self.localize(H, BW, trans_pos)
-            
+        
+        if (locations.size) == 0:
+            kf_targets = self.__filtering(np.empty(0), dT)
+            return np.empty(0), np.empty(0), H_db, self.R_range, max_i, kf_targets
+        
         clustered_locations = self.__clustering(locations)
-        targets = self.__association(clustered_locations)
+        targets, kf_targets = self.__association(clustered_locations, dT)
     
         if verbose:
-            return targets, clustered_locations, H_db, self.R_range, max_i
+            return targets, clustered_locations, H_db, self.R_range, max_i, kf_targets
         else:
             return targets
     

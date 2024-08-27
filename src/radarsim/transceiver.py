@@ -22,13 +22,14 @@ class Transceiver(Node):
     ##############
     ## Constructor
     ##############
-    def __init__(self, pos):
+    def __init__(self, pos, noise):
         super().__init__(pos)
         
         num_freq_points = int(Transceiver.BW * Transceiver.T)
         f = np.linspace(Transceiver.f_start, Transceiver.f_stop, num=num_freq_points)
         w = 2 * np.pi * f
         self.__k = (w / scipy.constants.c).reshape(-1, 1)
+        self.noise = noise
         
         Transceiver.all.append(self)
     
@@ -36,7 +37,7 @@ class Transceiver(Node):
     ## Methods
     ##########
     def __calc_distance(self, pos):
-        return np.sqrt(np.sum(np.power(self.position - pos, 2)))
+        return np.sqrt(np.sum(np.power(self.position - pos, 2))) + np.random.normal(loc=0, scale=self.noise)
         
     
     def measure_targets(self, targets):
