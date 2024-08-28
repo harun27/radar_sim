@@ -9,10 +9,8 @@ import numpy as np
 import scipy
 from itertools import product
 from sklearn.cluster import DBSCAN
-from filterpy.kalman import KalmanFilter
-from filterpy.kalman import IMM
-from filterpy.common import Q_discrete_white_noise
 
+from .filters import KF, EKF, IMMEstimator, Q_kinematic
 
 class Track:
     status_type = {'tentative': 0, 'terminated': 1, 'confirmed': 2}
@@ -21,8 +19,8 @@ class Track:
     def __init__(self, position):
         self.status = Track.status_type['tentative']
         self.__pos = np.array(position).reshape(3, 1)
-        self.filters = None # np.array([])
-        #self.IMM = None
+        self.filters = []
+        self.IMM = None
         Track.all.append(self)
     
     @property
@@ -33,65 +31,151 @@ class Track:
     def state(self):
         return self.__state
     
+    @property
+    def x(self):
+        return self.IMM.x
+    
+    @property
+    def P(self):
+        return self.IMM.P
+    
     def new_position(self, new_pos, dT):
         self.__pos = np.hstack((self.pos, new_pos.reshape(3, 1)))
         
-        if self.status == Track.status_type['tentative'] and self.filters == None:
+        if self.status == Track.status_type['tentative'] and not self.filters:
             self.status = Track.status_type['confirmed']
             v = [0, 0, 0] # (self.pos[:, -1] - self.pos[:, -2]) / dT
-            a = [0, 0, 0]
-            w = 0
-            self.__state = np.append(np.dstack((new_pos, v, a)).flatten(), w)
+            # a = [0, 0, 0]
+            w = 1 # this is arbitrarily set to 1 (this shouldn't be 0 so we don't divide by 0)
+            self.__state = np.append(np.dstack((new_pos, v)).flatten(), w)
             self.init_filter(dT)
         else:
-            self.filters.predict()
-            self.filters.update(new_pos)
+            self.IMM.predict()
+            self.IMM.update(new_pos)
+            
+    def predict(self):
+        if self.IMM != None:
+            self.IMM.predict()
+        else:
+            print("Filter is not initialized yet")
+            return
             
     def init_filter(self, dT):
         ## Variables used by all the filters
-        dim_x = 10
+        dim_x = 7
         dim_z = 3
         
-        H = np.zeros((3, 10))
-        H[0, 0] = H[1, 3] = H[2, 6] = 1
+        H = np.zeros((3, 7))
+        H[0, 0] = H[1, 2] = H[2, 4] = 1
         
-        Q = Q_discrete_white_noise(dim=3, dt=dT, var=1e-3, block_size=3)
-        Q = np.vstack((Q, np.zeros((1, Q.shape[1]))))
-        Q = np.hstack((Q, np.zeros((Q.shape[0], 1))))
+        P_factor = 10
+        R_factor = .1
         
-        ## Constant velocity filter
-        lin_filter = KalmanFilter(dim_x=dim_x, dim_z=dim_z)
+        # Constant velocity filter
+        lin_filter = KF(dim_x=dim_x, dim_z=dim_z)
         
         lin_filter.x = self.state
         
         lin_filter.H = H
         
-        F_lin = np.kron(np.eye(3), np.array([[1, dT, dT**2/2], [0, 1, dT], [0, 0, 1]]))
+        F_lin = np.kron(np.eye(2), np.array([[1, dT, dT**2/2], [0, 1, dT], [0, 0, 1]]))
         F_lin = np.vstack((F_lin, np.zeros((1, F_lin.shape[1]))))
         F_lin = np.hstack((F_lin, np.zeros((F_lin.shape[0], 1))))
         lin_filter.F = F_lin
         
-        lin_filter.R *= 1
-        lin_filter.P *= 5
+        lin_filter.R *= R_factor
+        lin_filter.P *= P_factor
+        
+        var_lin = 1e-0
+        var_circ = 0
+        lin_filter.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
+        
+        self.filters.append(lin_filter)
+        
+        # Constant Turn Filter 1
+        turn_filter = EKF(dim_x=dim_x, dim_z=dim_z, dT=dT, state_trans_func=self.__circular_prediction, state_trans_jacob_func=self.__circular_jacobian)
+        
+        turn_filter.x = self.state
+        turn_filter.H = H
+        
+        var_lin = 1e-0
+        var_circ = 2e-3
+        turn_filter.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
+        
+        turn_filter.R *= R_factor
+        turn_filter.P *= P_factor
+        
+        self.filters.append(turn_filter)
+        
+        # Constant Turn Filter 2
+        turn_filter2 = EKF(dim_x=dim_x, dim_z=dim_z, dT=dT, state_trans_func=self.__circular_prediction, state_trans_jacob_func=self.__circular_jacobian)
+        
+        turn_filter2.x = self.state
+        turn_filter2.H = H
+        
+        var_lin = 1e-1
+        var_circ = 1e-5
+        turn_filter.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
         
         
-        b = 0
-        Q[-1, -1] = b * dT
-        lin_filter.Q = Q
+        turn_filter2.R *= R_factor
+        turn_filter2.P *= P_factor
         
-        self.filters = lin_filter
+        self.filters.append(turn_filter2)
         
-        ## Constant Turn Filter 1
-        # turn_filter = KalmanFilter(dim_x=10, dim_z=3)
+        # Initializing the IMM Estimator
+        mu = [1/2, 1/4, 1/4]
+        trans = np.array([[0.95, 0.05, 0], [0.2, 0.6, 0.2], [0, 0.2, 0.8]])
+        self.IMM = IMMEstimator(self.filters, mu, trans)
         
-        # turn_filter.x = self.state
-        # turn_filter.H = H
+    def process_noise(self, dim, dT, block_size, var_lin, var_circ):
+        Q = Q_kinematic(dim=dim, dt=dT, var=var_lin, block_size=block_size)
+        Q = np.vstack((Q, np.zeros((1, Q.shape[1]))))
+        Q = np.hstack((Q, np.zeros((Q.shape[0], 1))))
+        Q[-1, -1] = var_circ * dT
         
-        # F_turn = np.zeros((dim_x, dim_x))
-        # F_turn[0, 0] = 1
-        # F_turn[]
+        return Q
+    
+    
+    def __circular_prediction(self, state, dT):
+        w = state[-1]
+        F = np.array([[1,   np.sin(w*dT)/w,         0,      -(1 - np.cos(w*dT))/w,      0,  0,  0], 
+                      [0,   np.cos(w*dT),           0,      -np.sin(w*dT),              0,  0,  0],
+                      [0,   (1-np.cos(w*dT))/w,     1,      np.sin(w*dT)/w,             0,  0,  0],
+                      [0,   np.sin(w*dT),           0,      np.cos(w*dT),               0,  0,  0],
+                      [0,   0,                      0,      0,                          1,  dT, 0],
+                      [0,   0,                      0,      0,                          0,  1,  0],
+                      [0,   0,                      0,      0,                          0,  0,  1]])
         
-            
+        # F = np.array([[1,   np.sin(w*dT)/w,         ,        0,      -(1 - np.cos(w*dT))/w,      ,  0,   0,  0,         0], 
+        #               [0,   np.cos(w*dT),           ,        0,      -np.sin(w*dT),              ,  0,   0,  0,         0],
+        #               [0,   -w*np.sin(w*dT),        ],
+        #               [0,   (1-np.cos(w*dT))/w,     ,        1,      np.sin(w*dT)/w,             ,  0,   0,  0,         0],
+        #               [0,   np.sin(w*dT),           ,        0,      np.cos(w*dT),               ,  0,   0,  0,         0],
+        #               [0,   w*np.cos(w*dT),         ],
+        #               [0,   0,                      ,        0,      0,                          0,  1,  dT, dT**2/2,   0],
+        #               [0,   0,                      ,        0,      0,                          0,  0,  1,  dT,        0],
+        #               [0,   0,                      0,       0,      0,                          0,  0,  0,  1,         0],
+        #               [0,   0,                      ,        0,      0,                          0,  0,  0,  0,         1]])
+        
+        return np.dot(F, state)
+        
+        
+    
+    def __circular_jacobian(self, state, dT):
+        w = state[-1]
+        F = np.array([[1,   np.sin(w*dT)/w,         0,      -(1 - np.cos(w*dT))/w,      0,  0,  0], 
+                      [0,   np.cos(w*dT),           0,      -np.sin(w*dT),              0,  0,  0],
+                      [0,   (1-np.cos(w*dT))/w,     1,      np.sin(w*dT)/w,             0,  0,  0],
+                      [0,   np.sin(w*dT),           0,      np.cos(w*dT),               0,  0,  0],
+                      [0,   0,                      0,      0,                          1,  dT, 0],
+                      [0,   0,                      0,      0,                          0,  1,  0],
+                      [0,   0,                      0,      0,                          0,  0,  1]])
+        
+        return F
+    
+    
+        
         
     def remove(self):
         Track.all.remove(self)
@@ -250,17 +334,21 @@ class Tracker:
                     if targets.size != 0:
                         track.new_position(targets[:3, i], dT)
                     elif track.status == Track.status_type['confirmed']:
-                        track.filters.predict()
+                        track.predict()
                     else:
                         continue
                         
                         
-                    x = track.filters.x
-                    x = np.hstack((track.filters.x[:-1:3], track.filters.x[1::3], track.filters.x[2::3], track.filters.x[-1]))
+                    x = track.x
+                    # x = np.hstack((track.x[:-1:3], track.x[1::3], track.x[2::3], track.x[-1]))
+                    x = np.hstack((track.x[:-1:2], track.x[1::2], track.x[-1]))
                     
-                    P = track.filters.P
-                    P = np.vstack((P[:-1:3, :], P[1::3, :], P[2::3, :], P[-1, :]))
-                    P = np.hstack((P[:, :-1:3], P[:, 1::3], P[:, 2::3], P[:, -1].reshape(-1, 1)))
+                    
+                    P = track.P
+                    # P = np.vstack((P[:-1:3, :], P[1::3, :], P[2::3, :], P[-1, :]))
+                    # P = np.hstack((P[:, :-1:3], P[:, 1::3], P[:, 2::3], P[:, -1].reshape(-1, 1)))
+                    P = np.vstack((P[:-1:2, :], P[1::2, :], P[-1, :]))
+                    P = np.hstack((P[:, :-1:2], P[:, 1::2], P[:, -1].reshape(-1, 1)))
                     
                     kf_targets.append((x, P))
                 
