@@ -49,14 +49,14 @@ class Model:
         tar3_pos = [3, -3, 0]
         
         # Target(tar1_pos, 'constant')
-        # Target(tar2_pos, 'linear', speed=1, direction=[1, -1, 0])
+        # Target(tar2_pos, 'linear', speed=.5, direction=[1, -1, 0])
         Target(tar3_pos, 'circular', speed=1, diameter=2)
         
         trans1_pos = [0, -10, 0] 
         trans2_pos = [10, 10, 0]
         trans3_pos = [-10, 10, 0]
         
-        noise = .01
+        noise = .1
         
         Transceiver(trans1_pos, noise)
         Transceiver(trans2_pos, noise)

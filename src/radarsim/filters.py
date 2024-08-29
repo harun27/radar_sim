@@ -310,8 +310,8 @@ class IMMEstimator:
             Labbe, R. "Kalman and Bayesian Filters in Python".
             https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python
             """
-            if len(filters) < 2:
-                raise ValueError('filters must contain at least two filters')
+            # if len(filters) < 2:
+            #     raise ValueError('filters must contain at least two filters')
 
             self.filters = filters
             self.mu = np.asarray(mu) / np.sum(mu)
@@ -328,10 +328,12 @@ class IMMEstimator:
             self.N = len(filters)  # number of filters
             self.likelihood = np.zeros(self.N)
             self.omega = np.zeros((self.N, self.N))
-            self._compute_mixing_probabilities()
+            if self.N != 1:
+                self._compute_mixing_probabilities()
 
             # initialize imm state estimate based on current filters
-            self._compute_state_estimate()
+            if self.N != 1:
+                self._compute_state_estimate()
             self.x_prior = self.x.copy()
             self.P_prior = self.P.copy()
             self.x_post = self.x.copy()
@@ -348,6 +350,11 @@ class IMMEstimator:
             z : np.array
                 measurement for this update.
             """
+            if self.N == 1:
+                self.filters[0].update(z)
+                self.x = self.filters[0].x
+                self.P = self.filters[0].P
+                return
 
             # run update on each filter, and save the likelihood
             for i, f in enumerate(self.filters):
@@ -377,6 +384,12 @@ class IMMEstimator:
                 Control vector. If not `None`, it is multiplied by B
                 to create the control input into the system.
             """
+            
+            if self.N == 1:
+                self.filters[0].predict()
+                self.x = self.filters[0].x
+                self.P = self.filters[0].P
+                return
 
             # compute mixed initial conditions
             xs, Ps = [], []

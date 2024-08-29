@@ -54,6 +54,10 @@ class Target(Node):
     def target_id(self):
         return self.__target_id
     
+    @property
+    def movement(self):
+        return self.__movement
+    
         
     def next_pos(self, dT):
         self.position = self.__movement.next_pos(self.position, dT)

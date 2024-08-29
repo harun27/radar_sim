@@ -44,9 +44,8 @@ class Track:
         
         if self.status == Track.status_type['tentative'] and not self.filters:
             self.status = Track.status_type['confirmed']
-            v = [0, 0, 0] # (self.pos[:, -1] - self.pos[:, -2]) / dT
-            # a = [0, 0, 0]
-            w = 1 # this is arbitrarily set to 1 (this shouldn't be 0 so we don't divide by 0)
+            v = (self.pos[:, -1] - self.pos[:, -2]) / dT
+            w = 0.5 # this is arbitrarily set to 1 (this shouldn't be 0 so we don't divide by 0)
             self.__state = np.append(np.dstack((new_pos, v)).flatten(), w)
             self.init_filter(dT)
         else:
@@ -68,14 +67,13 @@ class Track:
         H = np.zeros((3, 7))
         H[0, 0] = H[1, 2] = H[2, 4] = 1
         
-        P_factor = 10
+        P_factor = 5
         R_factor = .1
         
         # Constant velocity filter
         lin_filter = KF(dim_x=dim_x, dim_z=dim_z)
         
         lin_filter.x = self.state
-        
         lin_filter.H = H
         
         F_lin = np.kron(np.eye(2), np.array([[1, dT, dT**2/2], [0, 1, dT], [0, 0, 1]]))
@@ -86,7 +84,7 @@ class Track:
         lin_filter.R *= R_factor
         lin_filter.P *= P_factor
         
-        var_lin = 1e-0
+        var_lin = 1e-3
         var_circ = 0
         lin_filter.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
         
@@ -98,7 +96,7 @@ class Track:
         turn_filter.x = self.state
         turn_filter.H = H
         
-        var_lin = 1e-0
+        var_lin = 1e-2
         var_circ = 2e-3
         turn_filter.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
         
@@ -113,9 +111,9 @@ class Track:
         turn_filter2.x = self.state
         turn_filter2.H = H
         
-        var_lin = 1e-1
+        var_lin = 1e-4
         var_circ = 1e-5
-        turn_filter.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
+        turn_filter2.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
         
         
         turn_filter2.R *= R_factor
@@ -126,6 +124,7 @@ class Track:
         # Initializing the IMM Estimator
         mu = [1/2, 1/4, 1/4]
         trans = np.array([[0.95, 0.05, 0], [0.2, 0.6, 0.2], [0, 0.2, 0.8]])
+        
         self.IMM = IMMEstimator(self.filters, mu, trans)
         
     def process_noise(self, dim, dT, block_size, var_lin, var_circ):
@@ -139,24 +138,13 @@ class Track:
     
     def __circular_prediction(self, state, dT):
         w = state[-1]
-        F = np.array([[1,   np.sin(w*dT)/w,         0,      -(1 - np.cos(w*dT))/w,      0,  0,  0], 
-                      [0,   np.cos(w*dT),           0,      -np.sin(w*dT),              0,  0,  0],
-                      [0,   (1-np.cos(w*dT))/w,     1,      np.sin(w*dT)/w,             0,  0,  0],
-                      [0,   np.sin(w*dT),           0,      np.cos(w*dT),               0,  0,  0],
-                      [0,   0,                      0,      0,                          1,  dT, 0],
-                      [0,   0,                      0,      0,                          0,  1,  0],
-                      [0,   0,                      0,      0,                          0,  0,  1]])
-        
-        # F = np.array([[1,   np.sin(w*dT)/w,         ,        0,      -(1 - np.cos(w*dT))/w,      ,  0,   0,  0,         0], 
-        #               [0,   np.cos(w*dT),           ,        0,      -np.sin(w*dT),              ,  0,   0,  0,         0],
-        #               [0,   -w*np.sin(w*dT),        ],
-        #               [0,   (1-np.cos(w*dT))/w,     ,        1,      np.sin(w*dT)/w,             ,  0,   0,  0,         0],
-        #               [0,   np.sin(w*dT),           ,        0,      np.cos(w*dT),               ,  0,   0,  0,         0],
-        #               [0,   w*np.cos(w*dT),         ],
-        #               [0,   0,                      ,        0,      0,                          0,  1,  dT, dT**2/2,   0],
-        #               [0,   0,                      ,        0,      0,                          0,  0,  1,  dT,        0],
-        #               [0,   0,                      0,       0,      0,                          0,  0,  0,  1,         0],
-        #               [0,   0,                      ,        0,      0,                          0,  0,  0,  0,         1]])
+        F = np.array([[1,   np.sin(w*dT)/w,         0,      -(1 - np.cos(w*dT))/w,      0,  0,      0], 
+                      [0,   np.cos(w*dT),           0,      -np.sin(w*dT),              0,  0,      0],
+                      [0,   (1-np.cos(w*dT))/w,     1,      np.sin(w*dT)/w,             0,  0,      0],
+                      [0,   np.sin(w*dT),           0,      np.cos(w*dT),               0,  0,      0],
+                      [0,   0,                      0,      0,                          1,  dT,     0],
+                      [0,   0,                      0,      0,                          0,  1,      0],
+                      [0,   0,                      0,      0,                          0,  0,      1]])
         
         return np.dot(F, state)
         
@@ -164,13 +152,15 @@ class Track:
     
     def __circular_jacobian(self, state, dT):
         w = state[-1]
-        F = np.array([[1,   np.sin(w*dT)/w,         0,      -(1 - np.cos(w*dT))/w,      0,  0,  0], 
-                      [0,   np.cos(w*dT),           0,      -np.sin(w*dT),              0,  0,  0],
-                      [0,   (1-np.cos(w*dT))/w,     1,      np.sin(w*dT)/w,             0,  0,  0],
-                      [0,   np.sin(w*dT),           0,      np.cos(w*dT),               0,  0,  0],
-                      [0,   0,                      0,      0,                          1,  dT, 0],
-                      [0,   0,                      0,      0,                          0,  1,  0],
-                      [0,   0,                      0,      0,                          0,  0,  1]])
+        vx = state[1]
+        vy = state[3]
+        F = np.array([[1,   np.sin(w*dT)/w,         0,      -(1 - np.cos(w*dT))/w,      0,  0,      (vx/w**2)*(w*dT*np.cos(w*dT) - np.sin(w*dT)) - (vy/w**2)*(w*dT*np.sin(w*dT)-(1-np.cos(w*dT)))],
+                      [0,   np.cos(w*dT),           0,      -np.sin(w*dT),              0,  0,      -dT*(vx*np.sin(w*dT)+vy*np.cos(w*dT))],
+                      [0,   (1-np.cos(w*dT))/w,     1,      np.sin(w*dT)/w,             0,  0,      (vy/w**2)*(w*dT*np.cos(w*dT) - np.sin(w*dT)) + (vx/w**2)*(w*dT*np.sin(w*dT)-(1-np.cos(w*dT)))],
+                      [0,   np.sin(w*dT),           0,      np.cos(w*dT),               0,  0,      dT*(vx*np.cos(w*dT)-vy*np.sin(w*dT))],
+                      [0,   0,                      0,      0,                          1,  dT,     0],
+                      [0,   0,                      0,      0,                          0,  1,      0],
+                      [0,   0,                      0,      0,                          0,  0,      1]])
         
         return F
     
@@ -340,8 +330,12 @@ class Tracker:
                         
                         
                     x = track.x
+                    print("v_x : " + str(x[1]))
+                    print("v_y : " + str(x[3]))
+                    print("w   : " + str(x[-1]) + "\n")
                     # x = np.hstack((track.x[:-1:3], track.x[1::3], track.x[2::3], track.x[-1]))
                     x = np.hstack((track.x[:-1:2], track.x[1::2], track.x[-1]))
+                    
                     
                     
                     P = track.P

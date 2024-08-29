@@ -84,7 +84,7 @@ class Movement:
                     self.__direction = np.array(self.direction, dtype=np.float64)
                 else:
                     raise AssertionError("Specify a direction vector as a list or a numpy array")
-                self.__movement_vector = self.direction.reshape(3, 1) / np.sum(np.abs(self.direction)) * self.speed
+                self.__movement_vector = self.direction.reshape(3, 1) / np.sqrt(np.sum(np.power(self.direction, 2))) * self.speed
             elif self.movement_type == 'circular':
                 assert self.diameter != 0, "You must specify a diameter for circular motion"
                 s_circle = np.pi * self.diameter
