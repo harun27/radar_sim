@@ -35,6 +35,10 @@ class Model:
         return self.__targets
     
     @property
+    def tracks(self):
+        return self.__tracks
+    
+    @property
     def ground_truth(self):
         return self.__ground_truth
     
@@ -48,24 +52,24 @@ class Model:
         tar2_pos = [-5, 5, 0]
         tar3_pos = [3, -3, 0]
         
-        # Target(tar1_pos, 'constant')
-        # Target(tar2_pos, 'linear', speed=.5, direction=[1, -1, 0])
+        Target(tar1_pos, 'constant')
+        Target(tar2_pos, 'linear', speed=.5, direction=[1, -1, 0])
         Target(tar3_pos, 'circular', speed=1, diameter=2)
         
         trans1_pos = [0, -10, 0] 
         trans2_pos = [10, 10, 0]
         trans3_pos = [-10, 10, 0]
         
-        noise = .1
+        noise = .05
         
         Transceiver(trans1_pos, noise)
         Transceiver(trans2_pos, noise)
         Transceiver(trans3_pos, noise)
         
+        
+        
         self.__trans_pos = np.hstack([trans.position for trans in Transceiver.all])
         self.__ground_truth = np.hstack([tar.position for tar in Target.all])
-        #self.__ground_truth = np.hstack((tar1.position, tar2.position))
-        # self.__ground_truth = tar2.position
     
     def __move_all_targets(self, dT):
         for i, target in enumerate(Target.all):
@@ -85,7 +89,7 @@ class Model:
         self.__move_all_targets(self.dT)
         H = self.__measure_wall_transceivers()
         if verbose:
-            self.__targets, self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i, self.kf_targets = self.tracker.track(H, Transceiver.BW, self.trans_pos, self.dT, verbose)
+            self.__targets, self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i, self.__tracks = self.tracker.track(H, Transceiver.BW, self.trans_pos, self.dT, verbose)
         else:
             self.__targets = self.tracker.track(H, Transceiver.BW, self.trans_pos, self.dT)
         

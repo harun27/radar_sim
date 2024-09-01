@@ -14,14 +14,39 @@ from .filters import KF, EKF, IMMEstimator, Q_kinematic
 
 class Track:
     status_type = {'tentative': 0, 'terminated': 1, 'confirmed': 2}
-    all = []
+    all = [] # list of all tracks
     
-    def __init__(self, position):
+    def __init__(self, position, score, dT):
         self.status = Track.status_type['tentative']
-        self.__pos = np.array(position).reshape(3, 1)
+        self.__pos = np.array(position)
+        self.dT = dT
+        
         self.filters = []
         self.IMM = None
+        self.init_filter()
+        
+        self.__tid = len(Track.all)
+        self.__score = score
+        self.__max_score = score
         Track.all.append(self)
+    
+    @property
+    def score(self):
+        return self.__score
+    
+    @score.setter
+    def score(self, s):
+        self.__score = s
+        if s > self.max_score:
+            self.__max_score = s
+    
+    @property
+    def max_score(self):
+        return self.__max_score
+    
+    @property
+    def tid(self):
+        return self.__tid
     
     @property
     def pos(self):
@@ -39,104 +64,131 @@ class Track:
     def P(self):
         return self.IMM.P
     
-    def new_position(self, new_pos, dT):
-        self.__pos = np.hstack((self.pos, new_pos.reshape(3, 1)))
+    @property
+    def S(self):
+        return self.IMM.S
+    
+    def mahalanobis(self, targets):
+        """Calculate the mahalanobis distances to all targets
+
+        Parameters
+        ----------
+        targets : np.array(): shape: (num_dim, num_targets)
+            This matrix contains the coordinate of every target detected.
+
+        Returns
+        -------
+        mah : np.array(): shape: (num_targets,)
+            This is the vector that contains the mahalanobis distances to all
+            given targets.
+
+        """
+        mah = np.array([])
+        for tar in targets.T:
+            mah = np.append(mah, self.IMM.mahalanobis(tar[:3]))
         
-        if self.status == Track.status_type['tentative'] and not self.filters:
-            self.status = Track.status_type['confirmed']
-            v = (self.pos[:, -1] - self.pos[:, -2]) / dT
-            w = 0.5 # this is arbitrarily set to 1 (this shouldn't be 0 so we don't divide by 0)
-            self.__state = np.append(np.dstack((new_pos, v)).flatten(), w)
-            self.init_filter(dT)
-        else:
-            self.IMM.predict()
-            self.IMM.update(new_pos)
-            
+        return mah
+    
+    def update(self, new_pos):
+        self.IMM.update(new_pos)
+        
     def predict(self):
-        if self.IMM != None:
-            self.IMM.predict()
-        else:
-            print("Filter is not initialized yet")
-            return
+        self.IMM.predict()
             
-    def init_filter(self, dT):
-        ## Variables used by all the filters
+    def init_filter(self):
+        v = [0, 0, 0] # (self.pos[:, -1] - self.pos[:, -2]) / self.dT
+        w = 1 # this is arbitrarily set to 1 (this shouldn't be 0 so we don't divide by 0)
+        self.__state = np.append(np.dstack((self.pos, v)).flatten(), w)
+        
+        #### Variables used by all the filters
+        
         dim_x = 7
         dim_z = 3
         
+        # Measurement Matrix
         H = np.zeros((3, 7))
         H[0, 0] = H[1, 2] = H[2, 4] = 1
         
-        P_factor = 5
-        R_factor = .1
+        R_factor = .05
         
-        # Constant velocity filter
+        # inital covariance matrix P
+        v_max = 10
+        w_max = 10
+        P = np.kron(np.eye(3), np.array([[R_factor, 0], [0, v_max**2/3]]))
+        P = np.vstack((P, np.zeros((1, P.shape[1]))))
+        P = np.hstack((P, np.zeros((P.shape[0], 1))))
+        P[-1, -1] = w_max**2 / 3
+        
+        #### Constant velocity filter
+        
         lin_filter = KF(dim_x=dim_x, dim_z=dim_z)
         
         lin_filter.x = self.state
         lin_filter.H = H
         
-        F_lin = np.kron(np.eye(2), np.array([[1, dT, dT**2/2], [0, 1, dT], [0, 0, 1]]))
+        F_lin = np.kron(np.eye(3), np.array([[1, self.dT], [0, 1]]))
         F_lin = np.vstack((F_lin, np.zeros((1, F_lin.shape[1]))))
         F_lin = np.hstack((F_lin, np.zeros((F_lin.shape[0], 1))))
         lin_filter.F = F_lin
         
         lin_filter.R *= R_factor
-        lin_filter.P *= P_factor
+        lin_filter.P = P
         
         var_lin = 1e-3
         var_circ = 0
-        lin_filter.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
+        lin_filter.Q = self.process_noise(3, 2, var_lin, var_circ)
         
         self.filters.append(lin_filter)
         
-        # Constant Turn Filter 1
-        turn_filter = EKF(dim_x=dim_x, dim_z=dim_z, dT=dT, state_trans_func=self.__circular_prediction, state_trans_jacob_func=self.__circular_jacobian)
+        #### Constant Turn Filter 1
+        
+        turn_filter = EKF(dim_x=dim_x, dim_z=dim_z, state_trans_func=self.__circular_prediction, state_trans_jacob_func=self.__circular_jacobian)
         
         turn_filter.x = self.state
         turn_filter.H = H
         
         var_lin = 1e-2
         var_circ = 2e-3
-        turn_filter.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
+        turn_filter.Q = self.process_noise(3, 2, var_lin, var_circ)
         
         turn_filter.R *= R_factor
-        turn_filter.P *= P_factor
+        turn_filter.P = P
         
         self.filters.append(turn_filter)
         
-        # Constant Turn Filter 2
-        turn_filter2 = EKF(dim_x=dim_x, dim_z=dim_z, dT=dT, state_trans_func=self.__circular_prediction, state_trans_jacob_func=self.__circular_jacobian)
+        #### Constant Turn Filter 2
+        
+        turn_filter2 = EKF(dim_x=dim_x, dim_z=dim_z, state_trans_func=self.__circular_prediction, state_trans_jacob_func=self.__circular_jacobian)
         
         turn_filter2.x = self.state
         turn_filter2.H = H
         
         var_lin = 1e-4
         var_circ = 1e-5
-        turn_filter2.Q = self.process_noise(3, dT, 2, var_lin, var_circ)
-        
+        turn_filter2.Q = self.process_noise(3, 2, var_lin, var_circ)
         
         turn_filter2.R *= R_factor
-        turn_filter2.P *= P_factor
+        turn_filter2.P = P
         
         self.filters.append(turn_filter2)
         
-        # Initializing the IMM Estimator
+        #### Initializing the IMM Estimator
+        
         mu = [1/2, 1/4, 1/4]
         trans = np.array([[0.95, 0.05, 0], [0.2, 0.6, 0.2], [0, 0.2, 0.8]])
         
         self.IMM = IMMEstimator(self.filters, mu, trans)
-        
-    def process_noise(self, dim, dT, block_size, var_lin, var_circ):
-        Q = Q_kinematic(dim=dim, dt=dT, var=var_lin, block_size=block_size)
+    
+    def process_noise(self, dim, block_size, var_lin, var_circ):
+        Q = Q_kinematic(dim=dim, dt=self.dT, var=var_lin, block_size=block_size)
         Q = np.vstack((Q, np.zeros((1, Q.shape[1]))))
         Q = np.hstack((Q, np.zeros((Q.shape[0], 1))))
-        Q[-1, -1] = var_circ * dT
+        Q[-1, -1] = var_circ * self.dT
         
         return Q
     
-    
-    def __circular_prediction(self, state, dT):
+    def __circular_prediction(self, state):
+        dT = self.dT
         w = state[-1]
         F = np.array([[1,   np.sin(w*dT)/w,         0,      -(1 - np.cos(w*dT))/w,      0,  0,      0], 
                       [0,   np.cos(w*dT),           0,      -np.sin(w*dT),              0,  0,      0],
@@ -147,10 +199,9 @@ class Track:
                       [0,   0,                      0,      0,                          0,  0,      1]])
         
         return np.dot(F, state)
-        
-        
     
-    def __circular_jacobian(self, state, dT):
+    def __circular_jacobian(self, state):
+        dT = self.dT
         w = state[-1]
         vx = state[1]
         vy = state[3]
@@ -164,14 +215,16 @@ class Track:
         
         return F
     
-    
-        
-        
     def remove(self):
         Track.all.remove(self)
+        del self
         
-    def remove_all():
-        Track.all = []
+    def clean():
+        tracks = Track.all
+        for t in tracks:
+            if t.status == Track.status_type['terminated']:
+                t.remove()
+                del t
     
 
 class Tracker:
@@ -274,7 +327,7 @@ class Tracker:
         return possible_targets
         
     
-    def localize(self, H, BW, trans_pos, verbose=False):
+    def _localize(self, H, BW, trans_pos, verbose=False):
         
         H_db = self.__preprocessing(H, BW)
         
@@ -298,7 +351,7 @@ class Tracker:
             return possible_targets
     
     
-    def __clustering(self, locs):
+    def _clustering(self, locs):
         """Cluster the locations after localization
         
 
@@ -312,80 +365,169 @@ class Tracker:
         minpts = 1 # This is the minimum number of points a cluster can consist of. Noise points will be clustered, but will be filtered away in data association
         clusters = DBSCAN(eps=eps, min_samples=minpts).fit(locs[:3, :].T)
         return np.vstack((locs, clusters.labels_))
+        
     
-    def __filtering(self, targets, dT):
-        kf_targets = []
+    def _association(self, clustered_locs, dT):
+        tracks = {}
+        num_tracks = len(Track.all)
         
-        if len(Track.all) == 0:
-            if targets.size != 0:
-                Track(targets[:3, 0])
-        else:
+        if clustered_locs.size != 0:
+            # Reducing the clusters into one single point at the center by taking the mean position of the cluster
+            targets = np.empty((4, 0))
+            num_clusters = np.max(clustered_locs[4, :]) + 1
+            cluster_list = np.arange(0, num_clusters)
+            for c in cluster_list:
+                tmp = np.mean(clustered_locs[:4, clustered_locs[4, :]==c], axis=1).reshape(4, 1)
+                targets = np.hstack((targets, tmp))
+            
+            
+            
+            
+            num_targets = targets.shape[1]
+            
+            # Parameters for Track Management
+            # Gating:
+            C = 4 
+            # This parameter defines the "probability that the (true) measurement will fall in the gate"
+            # with C = 4, it is 73.9% and with C = 9 it is 97.1% 
+            # Track confirmation threshold
+            P_con = 20
+            # Track deletion threshold
+            P_del = 20
+            # The value that is subtracted if the track is not measured
+            no_meas_diff = 5
+            
+            # Parameters for Scoring Function
+            beta_NT = 1e-3 # density of new targets
+            P_D = 0.8 # probability of detection
+            P_FA = 1e-2 # probability of false alert
+            M = 3 # num of dimensions
+            V_C = 20*20 # volume of the clutter
+            beta_FT = P_FA / V_C # false target density. density of false alarms per unit volume
+            LLR_0 = np.log(P_D * beta_NT/beta_FT)
+            
+            # Initialize Tracks
+            # If there are no tracks at all. All targets become tentative tracks
+            # Otherwise we update each track with the measured targets
+            if num_tracks == 0:
+                for tar in targets.T:
+                    Track(tar[:3], LLR_0, dT)
+                return targets, np.empty(0)
+            else:
+                for track in Track.all:
+                    track.predict()
+            
+            # Assignment matrix
+            Assignment = np.zeros((num_tracks, num_targets)) 
             for i, track in enumerate(Track.all):
-                    if targets.size != 0:
-                        track.new_position(targets[:3, i], dT)
-                    elif track.status == Track.status_type['confirmed']:
-                        track.predict()
-                    else:
-                        continue
-                        
-                        
-                    x = track.x
-                    print("v_x : " + str(x[1]))
-                    print("v_y : " + str(x[3]))
-                    print("w   : " + str(x[-1]) + "\n")
-                    # x = np.hstack((track.x[:-1:3], track.x[1::3], track.x[2::3], track.x[-1]))
-                    x = np.hstack((track.x[:-1:2], track.x[1::2], track.x[-1]))
-                    
-                    
-                    
-                    P = track.P
-                    # P = np.vstack((P[:-1:3, :], P[1::3, :], P[2::3, :], P[-1, :]))
-                    # P = np.hstack((P[:, :-1:3], P[:, 1::3], P[:, 2::3], P[:, -1].reshape(-1, 1)))
-                    P = np.vstack((P[:-1:2, :], P[1::2, :], P[-1, :]))
-                    P = np.hstack((P[:, :-1:2], P[:, 1::2], P[:, -1].reshape(-1, 1)))
-                    
-                    kf_targets.append((x, P))
+                # Mahalanobis Distances
+                Assignment[i] = track.mahalanobis(targets)**2
+                # Gating
+                Assignment[i, Assignment[i] > C] = np.inf
+                # Scoring:
+                S = np.sqrt(np.linalg.det(track.S))
+                factor = np.log((P_D * V_C) / ((2*np.pi)**(M/2) * beta_FT * S))
+                Assignment[i] = Assignment[i] * (-1/2) + factor
+            
+            # if a track does not have a measurement that can be assigned to it, 
+            # so every measurement is outside of the gates, the row will be full of np.inf
+            # in that case, we have to remove that row to solve the assignment problem
+            # those tracks that do not have any measurement, are reduced by score
+            # later. for now i will calculate an array of detected and not-detected targets
+            # where False means that the object was not detected
+            no_det = np.array([not np.isinf(Assignment[i]).all() for i in range(num_tracks)])
+            Assignment = Assignment[no_det, :]
+            
+            # Hungarian / Munkres Algorithm
+            row, col = scipy.optimize.linear_sum_assignment(Assignment, maximize=True)
+            
+            # here i expand the list of no-detections if the number of tracks is
+            # more than the number of targets
+            if num_tracks > len(row):
+                num_poss_tracks = len(Assignment)
+
+                unassigned_tracks = np.arange(num_poss_tracks)
+                unassigned_tracks = list(set(unassigned_tracks).difference(row))
+                no_det[np.where(no_det)[0][unassigned_tracks]] = False
                 
+                rows = np.zeros(num_tracks)
+                rows[no_det] = row
+                row = np.astype(rows, int)
                 
-        return kf_targets
+                cols = np.zeros(num_tracks)
+                cols[no_det] = col
+                col = np.astype(cols, int)
+        
+        else:
+            # This is executed if there are no targets detected at all
+            no_det = np.zeros(num_tracks)
+            no_det.fill(False)
+            targets = clustered_locs
+            for track in Track.all:
+                track.predict()
+            
+        
+        # Update the tracks according to the new Assignmentand do Track management
+        for i, track in enumerate(Track.all):
+            # Score update
+            if no_det[i] == False:
+                # when the track wasn't assigned a measurement
+                track.score -= no_meas_diff
+            else:
+                track.score += Assignment[row[i], col[i]]
+                track.update(targets[:3, col[i]])
+                
+            # Track Management
+            if track.max_score - track.score >= P_del:
+                track.status = Track.status_type['terminated']
+            elif track.score >= P_con:
+                track.status = Track.status_type['confirmed']
+            
+            # Update
+            if track.status == Track.status_type['confirmed']:
+                x = track.x
+                # x = np.hstack((track.x[:-1:3], track.x[1::3], track.x[2::3], track.x[-1]))
+                x = np.hstack((track.x[:-1:2], track.x[1::2], track.x[-1]))
+                
+                P = track.P
+                # P = np.vstack((P[:-1:3, :], P[1::3, :], P[2::3, :], P[-1, :]))
+                # P = np.hstack((P[:, :-1:3], P[:, 1::3], P[:, 2::3], P[:, -1].reshape(-1, 1)))
+                P = np.vstack((P[:-1:2, :], P[1::2, :], P[-1, :]))
+                P = np.hstack((P[:, :-1:2], P[:, 1::2], P[:, -1].reshape(-1, 1)))
+            
+                tracks[track.tid] = (x, P)
+        
+        Track.clean()
+        
+        if clustered_locs.size != 0:
+            # Initialize new tracks
+            # get the unassigned measurements
+            unassigned_meas = np.arange(num_targets)
+            # Filter the the not assigned measurements
+            unassigned_meas = set(unassigned_meas).difference(col)
+            # only those measurements that were outside of gates are used to initialize new tracks
+            for i in unassigned_meas:
+                if np.isinf(Assignment[row, i]).all():
+                    # Initialize the new tracks
+                    Track(targets[:3, i], LLR_0, dT)
         
         
-    def __association(self, clustered_locs, dT):
-        # Reducing the clusters into one single point at the center
-        targets = np.empty((4, 0))
-        num_clusters = np.max(clustered_locs[4, :]) + 1
-        cluster_list = np.arange(0, num_clusters)
-        for c in cluster_list:
-            tmp = np.mean(clustered_locs[:4, clustered_locs[4, :]==c], axis=1).reshape(4, 1)
-            targets = np.hstack((targets, tmp))
-        
-        
-        
-        kf_targets = self.__filtering(targets, dT)
-        
-        #row, col = scipy.optimize.linear_sum_assignment(cost_matrix)
-        #cost_matrix[row, col]
-        
-        return targets, kf_targets
+        return targets, tracks
         
     
     def track(self, H, BW, trans_pos, dT, verbose=False):
         if verbose: 
-            locations, H_db, max_i = self.localize(H, BW, trans_pos, verbose)
+            locations, H_db, max_i = self._localize(H, BW, trans_pos, verbose)
         else:
-            locations = self.localize(H, BW, trans_pos)
+            locations = self._localize(H, BW, trans_pos)
         
-        if (locations.size) == 0:
-            kf_targets = self.__filtering(np.empty(0), dT)
-            return np.empty(0), np.empty(0), H_db, self.R_range, max_i, kf_targets
-        
-        clustered_locations = self.__clustering(locations)
-        targets, kf_targets = self.__association(clustered_locations, dT)
+        clustered_locations = self._clustering(locations)
+        targets, tracks = self._association(clustered_locations, dT)
     
         if verbose:
-            return targets, clustered_locations, H_db, self.R_range, max_i, kf_targets
+            return targets, clustered_locations, H_db, self.R_range, max_i, tracks
         else:
-            return targets
+            return tracks
     
     
     

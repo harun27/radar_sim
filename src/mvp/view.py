@@ -14,7 +14,7 @@ from matplotlib.patches import Ellipse
 class DynamicEllipsePlot:
     def __init__(self, ax):
         self.ax = ax
-        self.ellipse = None
+        self.ellipses = []
 
     def plot_covariance_ellipse(self, mean, cov, conf_perc=0.95, facecolor='none', **kwargs):
         """
@@ -32,10 +32,6 @@ class DynamicEllipsePlot:
         **kwargs : additional keyword arguments
             Passed to matplotlib.patches.Ellipse.
         """
-        # Remove the previous ellipse if it exists
-        if self.ellipse:
-            self.ellipse.remove()
-
         # Eigenvalues and eigenvectors of the covariance matrix
         eigvals, eigvecs = np.linalg.eigh(cov)
         
@@ -53,10 +49,15 @@ class DynamicEllipsePlot:
         # The factor of 2 is necessary because the Ellipse object in matplotlib expects the full width and height
         
         # Create the ellipse patch
-        self.ellipse = Ellipse(xy=mean, width=width, height=height, angle=angle, facecolor=facecolor, **kwargs)
+        self.ellipses.append(Ellipse(xy=mean, width=width, height=height, angle=angle, facecolor=facecolor, **kwargs))
         
         # Add the ellipse to the plot
-        self.ax.add_patch(self.ellipse)
+        self.ax.add_patch(self.ellipses[-1])
+        
+    def clear_ellipses(self):
+        for e in self.ellipses:
+            e.remove()
+        self.ellipses = []
 
 class View:
     def __init__(self, trans_pos, dT, verbose=False):
@@ -81,7 +82,9 @@ class View:
         if verbose:
             self.map_estim = self.map_ax.scatter([], [], marker='o', label='Clusters', s=30, edgecolors='k', alpha=1)
             self.map_cluscen = self.map_ax.scatter([], [], marker='x', label='Cluster Center', color='k')
-            self.map_kf = self.map_ax.scatter([], [], marker='x', label='KF Estimation', color='g')
+            self.map_track = self.map_ax.scatter([], [], marker='x', label='Tracks', color='g')
+            self.track_text = {}
+            self.track_vel_arrow = {}
             
             # Initalizing raw data plot
             self.raw_fig, self.raw_ax = plt.subplots(self.num_trans, 1)
@@ -135,12 +138,39 @@ class View:
                 self.map_estim.set_array(estimations[4, :])
                 self.map_cluscen.set_offsets(targets.T)
                 
-            kf_targets = kwargs['kf_targets']
-            for i, tar in enumerate(kf_targets):
-                mean = tar[0][:2]
-                C = tar[1][:2, :2]
-                self.map_kf.set_offsets(mean)
-                self.ellipse_plot.plot_covariance_ellipse(mean, C, facecolor='b', alpha=0.1)
+            tracks = kwargs['tracks']
+            if len(tracks) != 0:
+                self.ellipse_plot.clear_ellipses()
+                all_x = []
+                all_tid = []
+                for tid, (x, P) in tracks.items():
+                    all_tid.append(tid)
+                    if tid in self.track_text.keys():
+                        # Change the position of the text field
+                        self.track_text[tid].set_position(x[:2] + self.__text_offset)
+                        # Change the position and direction of the velocity arrow
+                        self.track_vel_arrow[tid].set_data(x=x[0], y=x[1], dx=x[3], dy=x[4])
+                    else:
+                        # Create a text element for the track
+                        self.track_text[tid] = self.map_ax.text(*(x[:2] + self.__text_offset), "T" + str(tid))
+                        # Create an arrow element for the track
+                        self.track_vel_arrow[tid] = self.map_ax.arrow(*x[:2], *x[3:5], width=0.05, length_includes_head=True, color='g')
+                    all_x.append(x)
+                    
+                    # plot the covariance ellipses of the tracks
+                    self.ellipse_plot.plot_covariance_ellipse(x[:2], P[:2, :2], facecolor='b', alpha=0.1)
+                # remove text and arrow of tracks that are deleted
+                removed_tids = set(self.track_text.keys()).difference(all_tid)
+                for tid in removed_tids:
+                    self.track_text[tid].remove()
+                    self.track_vel_arrow[tid].remove()
+                    self.track_vel_arrow.pop(tid)
+                    self.track_text.pop(tid)
+                
+                # plot all the tracks
+                all_x = np.array(all_x).reshape(len(tracks), -1)
+                self.map_track.set_offsets(all_x[:, :2])
+                
             
             ## Redrawing Raw plot
             for i in range(self.num_trans):                        

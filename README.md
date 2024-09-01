@@ -1,12 +1,19 @@
 # radar_sim
 - This project tries to simulate an FMCW radar tracking system
 - Multiple targets can be placed anywhere with given movement types
-- Multiple FMCW radars can be positioned to make localization and tracking possible using algorithms like Multilateration and GNN (Global Nearest Neighbor)
+- Multiple FMCW radars can be positioned to make localization and tracking possible
+- The plane wave assumption for the radars are assumed
 - Transmission signals are not investigated because synchronization is too expensive
 - Movement types currently supported:
     - constant
     - linear
     - circular
+- A basic implementation of a tracker was done using the following algorithms:
+    - A novel approach for Multilateration described below to detect multiple passive targets using only the distances of the radar measurements
+    - DBSCAN for clustering multiple reflections of the same target
+    - IMM-Estimator with a KF and an EKF to include the CT and CV motion models for filtering, smoothing and prediction and to support maneuvers
+    - GNN for data association with a scoring function to not lose tracks if they are not detected
+- The Algorithms used for this tracker are programmed so it is possible to easily switch them out and test other ones
 - The simulation can be controlled with the keyboard for better debugging:
 
 | Key | Function |
@@ -19,23 +26,27 @@
 
 # Kanban Plan
 ## Todo
-- Refine the FMCW signal theory
 - Implement CFAR (Constant False Alarm Rate) rather than a fixed threshold
-- Train an NN to have an adaptive threshold
+- Make use of the velocities
 - Use a NN for tracking
+- Train an NN to have an adaptive threshold
 - Optimize the maximum finding algorithm
-- Implement Gauss-Newton Algorithm to reduce the errors or WLLS (Weightes Linear Least Squares)
+- Implement random Clutter[^cambridge_tracking]
+- Clutter measurement density estimation[^cambridge_tracking]
+- Implement Gauss-Newton Algorithm to reduce the errors or WLLS (Weighted Linear Least Squares)
 - Tackle NLOS (Non-Line-Of-Sight) issues (there is a paper doing this with NN)
-- Use RSS?
-- Use velocity too? Do we have a simple LFMCW radar or something more advanced like CW-LFMCW? Do we have different modulation techniques?
+- Make use of RSS
 - TBD (Track before detect) instead of DBT (Detect before track)?
-
+- Plot Errors for Tracks
+- Work on the IMM-Estimator
+    - Extend IMM-Estimator for KF to have a CA model
+    - Optimize the Matrices and initializations
+    - Use the PF or UKF
 
 ## Doing
-- Tracking:
-    - Filtering: Smooth out the targets. Make predictions to have uncertainties about tracks
-    - Data Association: Associate targets to tracks. Also initiate or delete tracks
-- Plot Errors for Tracks
+- Refine the FMCW signal theory
+    - Distance-dependent amplitude
+    - Angle-dependent RCS (Radar Cross Section)
 
 ## Done 
 - Simulation of movement
@@ -52,6 +63,8 @@ $$c_j = \sum_{i=0}^{T} (m_{i,j} - p_{i,j})^2$$
 - Integrated Keyboard controls for the simulation
 - Plot the raw radar signal with the chosen maxima
 - Clustering: Fuse the same target points to one single target. DBSCAN was used as a first implementation since it allows clusters in arbitrary shape. Further improvements might be to use HDBSCAN* or SDPFC[^tracking_book]
+- Filtering: IMM (Interactive Multiple Model) Estimator was implemented using KF (Kalman Filter) and EKF (Extended Kalman Filter) with 2 motion models for CV (constant velocity) and CT (constant turn)[^cambridge_tracking]. The Filtering works for a single target for now. After Data Association it will be for multiple targets.
+- Data Association: GNN (Global Nearest Neighbor) was implemented. Improvement: Use PDA (Proabilistic Data Association) Algorithms
 
 
 # Project Structure
@@ -65,12 +78,18 @@ $$c_j = \sum_{i=0}^{T} (m_{i,j} - p_{i,j})^2$$
 title: Radar Simulation
 ---
 classDiagram
-		Node <|-- Target
-		Node <|-- Transceiver
+		Target --|> Node
+		Transceiver --|> Node
 		Target *-- Movement
+		KF --|> TempFilter
+		EKF --|> TempFilter
 		Model --> Transceiver : measures with
 		Model --> Target : moves
 		Model --> Tracker : uses
+		Tracker *-- Track : initializes and manages
+		Track *-- KF
+		Track *-- EKF
+		Track *-- IMMEstimator
 		Presenter <--> Model
 		View <--> Presenter
 		
@@ -89,11 +108,14 @@ classDiagram
 		}
 		
 		class Transceiver{
+        		+float noise
 			+measure(targets) np.array
 		}
 		
 		class Tracker{
-			+localize() np.array
+			#localize() np.array
+			#clustering() np.array
+			#association() np.array
 			+track() np.array
 		}
 		
@@ -102,23 +124,51 @@ classDiagram
 		}
 		
 		class Model{
-			
+			+step()
 		}
 		
 		class View{
-			+String input
+			+step()
 		}
 		
 		class Presenter{
-			
+			+run()
 		}
+		
+		class TempFilter{
+        		<<Abstract>>
+		}
+		
+        class Track{
+            +np.array x
+            np.array P
+            +mahalanobis(targets) np.array
+            +predict()
+            +update()
+            +remove()
+        }
+		
+		class KF{
+        		+predict()
+        		+update()
+		}
+		
+		class EKF{
+        		+predict()
+        		+update()
+		}
+		
+		class IMMEstimator{
+        		+update()
+        		+predict()
+        	}
 ```
 
 # Footnotes
 [^tracking_book]: Lin Cao et al. (October 2021). Target Recognition and Tracking for Millimeter Wave Radar in Intelligent Transportation
 [^loc_book]: S. A. (Reza) Zekavat and R. Micheal Buehrer (2019). Handbook of Position Localization. Theory, Practice, and Advances
 [^multilat_paper]: Vinh Tran-Quang et al. (2013). Target Tracking System using Lateration Estimation Method in Wireless Sensor Networks
-
+[^cambridge_tracking]: Subhash Challa et al. (2011). Fundamentals of Object Tracking
 
 
 

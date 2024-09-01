@@ -58,8 +58,8 @@ class TempFilter:
         self.SI = np.zeros((dim_z, dim_z)) # inverse system uncertainty
         
         ## Read Only
-        self._log_likelihood = np.log(sys.float_info.min)
-        self._likelihood = sys.float_info.min
+        self.__log_likelihood = np.log(sys.float_info.min)
+        self.__likelihood = sys.float_info.min
         
     def logpdf(self, x, mean=None, cov=1, allow_singular=True):
         """
@@ -91,9 +91,8 @@ class TempFilter:
         """
         log-likelihood of the last measurement.
         """
-        if self._log_likelihood is None:
-            self._log_likelihood = self.logpdf(x=self.y, cov=self.S)
-        return self._log_likelihood
+        self.__log_likelihood = self.logpdf(x=self.y, cov=self.S)
+        return self.__log_likelihood
 
     @property
     def likelihood(self):
@@ -104,52 +103,35 @@ class TempFilter:
         which multiply by this value, so by default we always return a
         number >= sys.float_info.min.
         """
-        if self._likelihood is None:
-            self._likelihood = np.exp(self.log_likelihood)
-            if self._likelihood == 0:
-                self._likelihood = sys.float_info.min
-        return self._likelihood
+        self.__likelihood = np.exp(self.log_likelihood)
+        if self.__likelihood == 0:
+            self.__likelihood = sys.float_info.min
+        return self.__likelihood
     
-    def reshape_z(self, z, dim_z, ndim):
-        """ ensure z is a (dim_z, 1) shaped vector"""
-
-        z = np.atleast_2d(z)
-        if z.shape[1] == dim_z:
-            z = z.T
-
-        if z.shape != (dim_z, 1):
-            raise ValueError('z must be convertible to shape ({}, 1)'.format(dim_z))
-
-        if ndim == 1:
-            z = z[:, 0]
-
-        if ndim == 0:
-            z = z[0, 0]
-
-        return z
+    def mahalanobis(self, meas=np.empty(0)):
+        if meas.size == 0:
+            y = self.y
+        else:
+            y = meas - np.dot(self.H, self.x)
+        
+        return np.sqrt(float(np.dot(np.dot(y.T, self.SI), y)))
 
 class KF(TempFilter):
     def __init__(self, dim_x, dim_z, dim_u=0):
-        
         super().__init__(dim_x, dim_z, dim_u)
-
     
     def predict(self):
         # Compute the predicted mean x_prior and covariance matrix P_prior
         self.x = np.dot(self.F , self.x)
         self.P = self._alpha_sq * self.F @ self.P @ self.F.T + self.Q
-    
-    def update(self, z):
-        self._likelihood = None
-        self._log_likelihood = None
-        z = self.reshape_z(z, self.dim_z, self.x.ndim)
         
         # Compute the innovation covariance matrix S and Kalman gain K
         PHT = self.P @ self.H.T
         self.S = self.H @ PHT + self.R
         self.SI = np.linalg.inv(self.S)
         self.K = PHT @ self.SI
-        
+    
+    def update(self, z):
         # Compute the residual y, posterior mean x_post and covariance matrix P_post
         self.y = z - np.dot(self.H, self.x)
         
@@ -158,34 +140,28 @@ class KF(TempFilter):
         self.P = I_KH @ self.P @ I_KH.T + self.K @ self.R @ self.K.T
 
 class EKF(TempFilter):
-    def __init__(self, dim_x, dim_z, dT, state_trans_func, state_trans_jacob_func, dim_u=0):
+    def __init__(self, dim_x, dim_z, state_trans_func, state_trans_jacob_func, dim_u=0):
         
         super().__init__(dim_x, dim_z, dim_u)
         
-        self.dT = dT
         self.state_trans_func = state_trans_func
         self.state_trans_jacob_func = state_trans_jacob_func
         
     def predict(self):
         # Compute the Jacobian of f at x_k−1|k−1
-        self.F = self.state_trans_jacob_func(self.x, self.dT)
+        self.F = self.state_trans_jacob_func(self.x)
         
         # Compute predicted mean and covariance matrix
-        self.x = self.state_trans_func(self.x, self.dT)
+        self.x = self.state_trans_func(self.x)
         self.P = self.F @ self.P @ self.F.T + self.Q
-        
-    
-    def update(self, z):
-        self._likelihood = None
-        self._log_likelihood = None
-        z = self.reshape_z(z, self.dim_z, self.x.ndim)
         
         # Compute predicted measurement y, innovation covariance S and Kalman Gain K
         PHT = self.P @ self.H.T
         self.S = self.H @ PHT + self.R
         self.SI = np.linalg.inv(self.S)
         self.K = PHT @ self.SI
-        
+    
+    def update(self, z):
         # Compute posterior mean x_post and covariance matrix P_post
         self.y = z - np.dot(self.H, self.x)
         self.x = self.x + np.dot(self.K, self.y)
@@ -194,206 +170,61 @@ class EKF(TempFilter):
         
 
 class IMMEstimator:
-        def __init__(self, filters, mu, M):
-            """ Implements an Interacting Multiple-Model (IMM) estimator.
-    
-            Parameters
-            ----------
-    
-            filters : (N,) array_like of KalmanFilter objects
-                List of N filters. filters[i] is the ith Kalman filter in the
-                IMM estimator.
-    
-                Each filter must have the same dimension for the state `x` and `P`,
-                otherwise the states of each filter cannot be mixed with each other.
-    
-            mu : (N,) array_like of float
-                mode probability: mu[i] is the probability that
-                filter i is the correct one.
-    
-            M : (N, N) ndarray of float
-                Markov chain transition matrix. M[i,j] is the probability of
-                switching from filter j to filter i.
-    
-    
-            Attributes
-            ----------
-            x : numpy.array(dim_x, 1)
-                Current state estimate. Any call to update() or predict() updates
-                this variable.
-    
-            P : numpy.array(dim_x, dim_x)
-                Current state covariance matrix. Any call to update() or predict()
-                updates this variable.
-    
-            x_prior : numpy.array(dim_x, 1)
-                Prior (predicted) state estimate. The *_prior and *_post attributes
-                are for convienence; they store the  prior and posterior of the
-                current epoch. Read Only.
-    
-            P_prior : numpy.array(dim_x, dim_x)
-                Prior (predicted) state covariance matrix. Read Only.
-    
-            x_post : numpy.array(dim_x, 1)
-                Posterior (updated) state estimate. Read Only.
-    
-            P_post : numpy.array(dim_x, dim_x)
-                Posterior (updated) state covariance matrix. Read Only.
-    
-            N : int
-                number of filters in the filter bank
-    
-            mu : (N,) ndarray of float
-                mode probability: mu[i] is the probability that
-                filter i is the correct one.
-    
-            M : (N, N) ndarray of float
-                Markov chain transition matrix. M[i,j] is the probability of
-                switching from filter j to filter i.
-    
-            cbar : (N,) ndarray of float
-                Total probability, after interaction, that the target is in state j.
-                We use it as the # normalization constant.
-    
-            likelihood: (N,) ndarray of float
-                Likelihood of each individual filter's last measurement.
-    
-            omega : (N, N) ndarray of float
-                Mixing probabilitity - omega[i, j] is the probabilility of mixing
-                the state of filter i into filter j. Perhaps more understandably,
-                it weights the states of each filter by:
-                    x_j = sum(omega[i,j] * x_i)
-    
-                with a similar weighting for P_j
-    
-    
-            Examples
-            --------
-    
-            >>> import numpy as np
-            >>> from filterpy.common import kinematic_kf
-            >>> kf1 = kinematic_kf(2, 2)
-            >>> kf2 = kinematic_kf(2, 2)
-            >>> # do some settings of x, R, P etc. here, I'll just use the defaults
-            >>> kf2.Q *= 0   # no prediction error in second filter
-            >>>
-            >>> filters = [kf1, kf2]
-            >>> mu = [0.5, 0.5]  # each filter is equally likely at the start
-            >>> trans = np.array([[0.97, 0.03], [0.03, 0.97]])
-            >>> imm = IMMEstimator(filters, mu, trans)
-            >>>
-            >>> for i in range(100):
-            >>>     # make some noisy data
-            >>>     x = i + np.random.randn()*np.sqrt(kf1.R[0, 0])
-            >>>     y = i + np.random.randn()*np.sqrt(kf1.R[1, 1])
-            >>>     z = np.array([[x], [y]])
-            >>>
-            >>>     # perform predict/update cycle
-            >>>     imm.predict()
-            >>>     imm.update(z)
-            >>>     print(imm.x.T)
-    
-            For a full explanation and more examples see my book
-            Kalman and Bayesian Filters in Python
-            https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python
-    
-    
-            References
-            ----------
-    
-            Bar-Shalom, Y., Li, X-R., and Kirubarajan, T. "Estimation with
-            Application to Tracking and Navigation". Wiley-Interscience, 2001.
-    
-            Crassidis, J and Junkins, J. "Optimal Estimation of
-            Dynamic Systems". CRC Press, second edition. 2012.
-    
-            Labbe, R. "Kalman and Bayesian Filters in Python".
-            https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python
-            """
-            # if len(filters) < 2:
-            #     raise ValueError('filters must contain at least two filters')
-
+        def __init__(self, filters, mu, Trans):
             self.filters = filters
             self.mu = np.asarray(mu) / np.sum(mu)
-            self.M = M
+            self.Trans = Trans
 
             x_shape = filters[0].x.shape
             for f in filters:
                 if x_shape != f.x.shape:
                     raise ValueError(
                         'All filters must have the same state dimension')
-
-            self.x = np.zeros(filters[0].x.shape)
-            self.P = np.zeros(filters[0].P.shape)
+            
+            self.x = np.zeros(x_shape)
+            self.P = np.eye(x_shape[0])
             self.N = len(filters)  # number of filters
             self.likelihood = np.zeros(self.N)
-            self.omega = np.zeros((self.N, self.N))
+            self.mixing_prob = np.zeros((self.N, self.N))
             if self.N != 1:
                 self._compute_mixing_probabilities()
-
-            # initialize imm state estimate based on current filters
-            if self.N != 1:
                 self._compute_state_estimate()
-            self.x_prior = self.x.copy()
-            self.P_prior = self.P.copy()
-            self.x_post = self.x.copy()
-            self.P_post = self.P.copy()
+                
 
         def update(self, z):
-            """
-            Add a new measurement (z) to the Kalman filter. If z is None, nothing
-            is changed.
-
-            Parameters
-            ----------
-
-            z : np.array
-                measurement for this update.
-            """
+            # If we only have one filter, IMM-Estimator turns into the basic filter
             if self.N == 1:
                 self.filters[0].update(z)
                 self.x = self.filters[0].x
                 self.P = self.filters[0].P
                 return
 
+            # step 2.5: model-based filtering. here the update step is done and the model likelihoods are saved            
             # run update on each filter, and save the likelihood
             for i, f in enumerate(self.filters):
                 f.update(z)
                 self.likelihood[i] = f.likelihood
-
+                
             # update mode probabilities from total probability * likelihood
-            self.mu = self.cbar * self.likelihood
+            self.mu = self.mu_k_k1 * self.likelihood
             self.mu /= np.sum(self.mu)  # normalize
-
+            
             self._compute_mixing_probabilities()
 
             # compute mixed IMM state and covariance and save posterior estimate
             self._compute_state_estimate()
-            self.x_post = self.x.copy()
-            self.P_post = self.P.copy()
 
         def predict(self, u=None):
-            """
-            Predict next state (prior) using the IMM state propagation
-            equations.
-
-            Parameters
-            ----------
-
-            u : np.array, optional
-                Control vector. If not `None`, it is multiplied by B
-                to create the control input into the system.
-            """
-            
+            # If we only have one filter, IMM-Estimator turns into the basic filter
             if self.N == 1:
                 self.filters[0].predict()
                 self.x = self.filters[0].x
                 self.P = self.filters[0].P
                 return
 
-            # compute mixed initial conditions
+            # step 1.5: model conditioned mixing. compute mixed initial conditions
             xs, Ps = [], []
-            for i, (f, w) in enumerate(zip(self.filters, self.omega.T)):
+            for i, (f, w) in enumerate(zip(self.filters, self.mixing_prob.T)):
                 x = np.zeros(self.x.shape)
                 for kf, wj in zip(self.filters, w):
                     x += kf.x * wj
@@ -405,7 +236,8 @@ class IMMEstimator:
                     P += wj * (np.outer(y, y) + kf.P)
                 Ps.append(P)
 
-            #  compute each filter's prior using the mixed initial conditions
+            # step 2.0: model-based filtering (here only prediction is done. in the update step, the rest of this step is done.
+            # compute each filter's prior using the mixed initial conditions
             for i, f in enumerate(self.filters):
                 # propagate using the mixed state estimate and covariance
                 f.x = xs[i].copy()
@@ -414,18 +246,18 @@ class IMMEstimator:
 
             # compute mixed IMM state and covariance and save posterior estimate
             self._compute_state_estimate()
-            self.x_prior = self.x.copy()
-            self.P_prior = self.P.copy()
-
+        
+        
         def _compute_state_estimate(self):
             """
             Computes the IMM's mixed state estimate from each filter using
-            the the mode probability self.mu to weight the estimates.
+            the mode probability self.mu to weight the estimates.
             """
+            # step 4: calculate the state estimate. This is called after predict and after update
             self.x.fill(0)
             for f, mu in zip(self.filters, self.mu):
                 self.x += f.x * mu
-
+                
             self.P.fill(0)
             for f, mu in zip(self.filters, self.mu):
                 y = f.x - self.x
@@ -435,11 +267,27 @@ class IMMEstimator:
             """
             Compute the mixing probability for each filter.
             """
-
-            self.cbar = np.dot(self.mu, self.M)
+            # Step 1.0: model conditioned mixing. here predcited model probability and mixing probability are calculated
+            self.mu_k_k1 = np.dot(self.mu, self.Trans)
             for i in range(self.N):
                 for j in range(self.N):
-                    self.omega[i, j] = (self.M[i, j]*self.mu[i]) / self.cbar[j]
+                    self.mixing_prob[i, j] = (self.Trans[i, j]*self.mu[i]) / self.mu_k_k1[j]
+              
+        def mahalanobis(self, meas):
+            d = 0
+            for f, mu in zip(self.filters, self.mu):
+                d += f.mahalanobis(meas) * mu
+                
+            return d
+        
+        @property
+        def S(self):
+            # Assume that the measurement matrix and 
+            # measurement covariance matrix is the same for all models
+            H = self.filters[0].H
+            R = self.filters[0].R
+            
+            return H @ self.P @ H.T + R
 
 
 
@@ -559,7 +407,19 @@ def Q_kinematic(dim, dt=1., var=1., block_size=1, order_by_dim=True):
         return block_diag(*[Q]*block_size) * var
     return order_by_derivative(np.array(Q), dim, block_size) * var
 
+
+
+
+
+
+
+
+
+
+
 """
+Parts of this code is taken from Roger R. Labbe Jr. Here is the License:
+
 The MIT License (MIT)
 
 Copyright (c) 2015 Roger R. Labbe Jr

@@ -43,7 +43,7 @@ class Presenter:
         if (((time() - self.last) > self.model.dT) and self.running) or self.step:
             self.iter_num += 1
             self.model.step(self.verbose)
-            self.view.step(self.model.targets, self.model.estimations, self.model.ground_truth, self.iter_num, self.verbose, y_raw=self.model.raw_radar, x_raw=self.model.raw_radar_range, idx_raw=self.model.max_i, kf_targets=self.model.kf_targets)
+            self.view.step(self.model.targets, self.model.estimations, self.model.ground_truth, self.iter_num, self.verbose, y_raw=self.model.raw_radar, x_raw=self.model.raw_radar_range, idx_raw=self.model.max_i, tracks=self.model.tracks)
             self.last = time()
             self.step = False
         else:
