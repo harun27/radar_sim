@@ -48,7 +48,7 @@ class Transceiver(Node):
         
         for i, target in enumerate(targets):
             dist = self.__calc_distance(target.position)
-            H = np.add(H, target.refl_coeff * np.exp(-1j * 2 * self.__k * dist))
+            H = np.add(H, target.refl_coeff * np.exp(-1j * 2 * self.__k * dist)) * 1/dist**2
         return np.real(H).reshape(-1, 1)
     
     def remove(self):

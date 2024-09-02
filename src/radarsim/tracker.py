@@ -25,7 +25,9 @@ class Track:
         self.IMM = None
         self.init_filter()
         
-        self.__tid = len(Track.all)
+        poss_tids = set(np.arange(len(Track.all) + 1))
+        all_tids = [track.tid for track in Track.all]
+        self.__tid = poss_tids.difference(all_tids).pop()
         self.__score = score
         self.__max_score = score
         Track.all.append(self)
@@ -332,11 +334,9 @@ class Tracker:
         H_db = self.__preprocessing(H, BW)
         
         num_transceivers = H.shape[1]
-        min_height = 0 # dB
-        prominence = 100
-        width = None
+        prominence = 70
         # with this function, ``find_peaks()`` we get also some other information, which we filter out by only taking the 0th element of the list
-        max_i = [scipy.signal.find_peaks(H_db[:, num], height=min_height, prominence=prominence, width=width)[0] for num in range(num_transceivers)]
+        max_i = [scipy.signal.find_peaks(H_db[:, num], prominence=prominence)[0] for num in range(num_transceivers)]
         dists = [self.R_range[max_i[num]] for num in range(len(max_i))]
         
         # Find all the possible targets with Multilateration
@@ -360,16 +360,40 @@ class Tracker:
         None.
 
         """
-        # Parameters for DBSCAN (These parameters may be changed for real data):
-        eps = 0.3 # This is the radius in which points of the cluster should be searched
-        minpts = 1 # This is the minimum number of points a cluster can consist of. Noise points will be clustered, but will be filtered away in data association
-        clusters = DBSCAN(eps=eps, min_samples=minpts).fit(locs[:3, :].T)
-        return np.vstack((locs, clusters.labels_))
+        if locs.size != 0:
+            # Parameters for DBSCAN (These parameters may be changed for real data):
+            eps = 0.3 # This is the radius in which points of the cluster should be searched
+            minpts = 1 # This is the minimum number of points a cluster can consist of. Noise points will be clustered, but will be filtered away in data association
+            clusters = DBSCAN(eps=eps, min_samples=minpts).fit(locs[:3, :].T)
+            return np.vstack((locs, clusters.labels_))
+        else:
+            return np.empty(0)
         
     
     def _association(self, clustered_locs, dT):
         tracks = {}
         num_tracks = len(Track.all)
+        
+        # Parameters for Track Management
+        # Gating:
+        C = 4 
+        # This parameter defines the "probability that the (true) measurement will fall in the gate"
+        # with C = 4, it is 73.9% and with C = 9 it is 97.1% 
+        # Track confirmation threshold
+        P_con = 20
+        # Track deletion threshold
+        P_del = 20
+        # The value that is subtracted if the track is not measured
+        no_meas_diff = 5
+        
+        # Parameters for Scoring Function
+        beta_NT = 1e-3 # density of new targets
+        P_D = 0.8 # probability of detection
+        P_FA = 1e-2 # probability of false alert
+        M = 3 # num of dimensions
+        V_C = 20*20 # volume of the clutter
+        beta_FT = P_FA / V_C # false target density. density of false alarms per unit volume
+        LLR_0 = np.log(P_D * beta_NT/beta_FT)
         
         if clustered_locs.size != 0:
             # Reducing the clusters into one single point at the center by taking the mean position of the cluster
@@ -384,28 +408,6 @@ class Tracker:
             
             
             num_targets = targets.shape[1]
-            
-            # Parameters for Track Management
-            # Gating:
-            C = 4 
-            # This parameter defines the "probability that the (true) measurement will fall in the gate"
-            # with C = 4, it is 73.9% and with C = 9 it is 97.1% 
-            # Track confirmation threshold
-            P_con = 20
-            # Track deletion threshold
-            P_del = 20
-            # The value that is subtracted if the track is not measured
-            no_meas_diff = 5
-            
-            # Parameters for Scoring Function
-            beta_NT = 1e-3 # density of new targets
-            P_D = 0.8 # probability of detection
-            P_FA = 1e-2 # probability of false alert
-            M = 3 # num of dimensions
-            V_C = 20*20 # volume of the clutter
-            beta_FT = P_FA / V_C # false target density. density of false alarms per unit volume
-            LLR_0 = np.log(P_D * beta_NT/beta_FT)
-            
             # Initialize Tracks
             # If there are no tracks at all. All targets become tentative tracks
             # Otherwise we update each track with the measured targets
@@ -429,34 +431,43 @@ class Tracker:
                 factor = np.log((P_D * V_C) / ((2*np.pi)**(M/2) * beta_FT * S))
                 Assignment[i] = Assignment[i] * (-1/2) + factor
             
-            # if a track does not have a measurement that can be assigned to it, 
-            # so every measurement is outside of the gates, the row will be full of np.inf
-            # in that case, we have to remove that row to solve the assignment problem
-            # those tracks that do not have any measurement, are reduced by score
-            # later. for now i will calculate an array of detected and not-detected targets
-            # where False means that the object was not detected
-            no_det = np.array([not np.isinf(Assignment[i]).all() for i in range(num_tracks)])
-            Assignment = Assignment[no_det, :]
             
-            # Hungarian / Munkres Algorithm
-            row, col = scipy.optimize.linear_sum_assignment(Assignment, maximize=True)
-            
-            # here i expand the list of no-detections if the number of tracks is
-            # more than the number of targets
-            if num_tracks > len(row):
-                num_poss_tracks = len(Assignment)
+            if Assignment.size != 0:
+                # if a track does not have a measurement that can be assigned to it, 
+                # so every measurement is outside of the gates, the row will be full of np.inf
+                # in that case, we have to remove that row to solve the assignment problem
+                # those tracks that do not have any measurement, are reduced by score
+                # later. for now i will calculate an array of detected and not-detected targets
+                # where False means that the object was not detected
+                no_det = np.array([not np.isinf(Assignment[i]).all() for i in range(num_tracks)])
+                Assignment = Assignment[no_det, :]
+                # we also need to convert the -inf to a real value because in some
+                # cases the hungarian method is not solvable with -inf
+                Assignment[Assignment==-np.inf] = -no_meas_diff
+                
+                # Hungarian / Munkres Algorithm
+                row, col = scipy.optimize.linear_sum_assignment(Assignment, maximize=True)
+                
+                # here i expand the list of no-detections if the number of tracks is
+                # more than the number of targets
+                if num_tracks > len(row):
+                    num_poss_tracks = len(Assignment)
 
-                unassigned_tracks = np.arange(num_poss_tracks)
-                unassigned_tracks = list(set(unassigned_tracks).difference(row))
-                no_det[np.where(no_det)[0][unassigned_tracks]] = False
-                
-                rows = np.zeros(num_tracks)
-                rows[no_det] = row
-                row = np.astype(rows, int)
-                
-                cols = np.zeros(num_tracks)
-                cols[no_det] = col
-                col = np.astype(cols, int)
+                    unassigned_tracks = np.arange(num_poss_tracks)
+                    unassigned_tracks = list(set(unassigned_tracks).difference(row))
+                    no_det[np.where(no_det)[0][unassigned_tracks]] = False
+                    
+                    rows = np.zeros(num_tracks)
+                    rows[no_det] = row
+                    row = np.astype(rows, int)
+                    
+                    cols = np.zeros(num_tracks)
+                    cols[no_det] = col
+                    col = np.astype(cols, int)
+            else:
+                # There are no detections
+                no_det = np.full(num_tracks, False)
+            
         
         else:
             # This is executed if there are no targets detected at all
@@ -507,7 +518,7 @@ class Tracker:
             unassigned_meas = set(unassigned_meas).difference(col)
             # only those measurements that were outside of gates are used to initialize new tracks
             for i in unassigned_meas:
-                if np.isinf(Assignment[row, i]).all():
+                if (Assignment[row, i] == -5).all():
                     # Initialize the new tracks
                     Track(targets[:3, i], LLR_0, dT)
         

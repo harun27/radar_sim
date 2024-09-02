@@ -78,13 +78,13 @@ class View:
             self.map_ax.text(*trans_pos[:2, i].T + self.__text_offset, text)
         
         self.map_gt = self.map_ax.scatter([], [], marker='o', color='k', label='GT Targets', s=100, alpha=0.3)
+        self.map_track = self.map_ax.scatter([], [], marker='x', label='Tracks', color='g')
+        self.track_text = {}
+        self.track_vel_arrow = {}
         
         if verbose:
             self.map_estim = self.map_ax.scatter([], [], marker='o', label='Clusters', s=30, edgecolors='k', alpha=1)
             self.map_cluscen = self.map_ax.scatter([], [], marker='x', label='Cluster Center', color='k')
-            self.map_track = self.map_ax.scatter([], [], marker='x', label='Tracks', color='g')
-            self.track_text = {}
-            self.track_vel_arrow = {}
             
             # Initalizing raw data plot
             self.raw_fig, self.raw_ax = plt.subplots(self.num_trans, 1)
@@ -102,10 +102,43 @@ class View:
         
         
     
-    def step(self, targets, estimations, ground_truth, iter_num, verbose=False, **kwargs):
+    def step(self, tracks, ground_truth, iter_num, verbose=False, targets=None, estimations=None, **kwargs):
         # Redrawing map plot
-        self.map_gt.set_offsets(ground_truth[:2, :].T)
         self.map_ax.set_title("Iteration " + str(iter_num) + "\nTime: " + str(iter_num*self.dT) + "s")
+        # Redrawing ground truth
+        self.map_gt.set_offsets(ground_truth[:2, :].T)
+        # Redrawing Tracks
+        if len(tracks) != 0:
+            self.ellipse_plot.clear_ellipses()
+            all_x = []
+            all_tid = []
+            for tid, (x, P) in tracks.items():
+                all_tid.append(tid)
+                if tid in self.track_text.keys():
+                    # Change the position of the text field
+                    self.track_text[tid].set_position(x[:2] + self.__text_offset)
+                    # Change the position and direction of the velocity arrow
+                    self.track_vel_arrow[tid].set_data(x=x[0], y=x[1], dx=x[3], dy=x[4])
+                else:
+                    # Create a text element for the track
+                    self.track_text[tid] = self.map_ax.text(*(x[:2] + self.__text_offset), "T" + str(tid))
+                    # Create an arrow element for the track
+                    self.track_vel_arrow[tid] = self.map_ax.arrow(*x[:2], *x[3:5], width=0.05, length_includes_head=True, color='g')
+                all_x.append(x)
+                
+                # plot the covariance ellipses of the tracks
+                self.ellipse_plot.plot_covariance_ellipse(x[:2], P[:2, :2], facecolor='b', alpha=0.1)
+            # remove text and arrow of tracks that are deleted
+            removed_tids = set(self.track_text.keys()).difference(all_tid)
+            for tid in removed_tids:
+                self.track_text[tid].remove()
+                self.track_vel_arrow[tid].remove()
+                self.track_vel_arrow.pop(tid)
+                self.track_text.pop(tid)
+            
+            # plot all the tracks
+            all_x = np.array(all_x).reshape(len(tracks), -1)
+            self.map_track.set_offsets(all_x[:, :2])
         
         # Redrawing verbose plots such as the raw data plot or error plot
         if verbose:
@@ -137,40 +170,6 @@ class View:
                 self.map_estim.set_offsets(estimations[:2, :].T)
                 self.map_estim.set_array(estimations[4, :])
                 self.map_cluscen.set_offsets(targets.T)
-                
-            tracks = kwargs['tracks']
-            if len(tracks) != 0:
-                self.ellipse_plot.clear_ellipses()
-                all_x = []
-                all_tid = []
-                for tid, (x, P) in tracks.items():
-                    all_tid.append(tid)
-                    if tid in self.track_text.keys():
-                        # Change the position of the text field
-                        self.track_text[tid].set_position(x[:2] + self.__text_offset)
-                        # Change the position and direction of the velocity arrow
-                        self.track_vel_arrow[tid].set_data(x=x[0], y=x[1], dx=x[3], dy=x[4])
-                    else:
-                        # Create a text element for the track
-                        self.track_text[tid] = self.map_ax.text(*(x[:2] + self.__text_offset), "T" + str(tid))
-                        # Create an arrow element for the track
-                        self.track_vel_arrow[tid] = self.map_ax.arrow(*x[:2], *x[3:5], width=0.05, length_includes_head=True, color='g')
-                    all_x.append(x)
-                    
-                    # plot the covariance ellipses of the tracks
-                    self.ellipse_plot.plot_covariance_ellipse(x[:2], P[:2, :2], facecolor='b', alpha=0.1)
-                # remove text and arrow of tracks that are deleted
-                removed_tids = set(self.track_text.keys()).difference(all_tid)
-                for tid in removed_tids:
-                    self.track_text[tid].remove()
-                    self.track_vel_arrow[tid].remove()
-                    self.track_vel_arrow.pop(tid)
-                    self.track_text.pop(tid)
-                
-                # plot all the tracks
-                all_x = np.array(all_x).reshape(len(tracks), -1)
-                self.map_track.set_offsets(all_x[:, :2])
-                
             
             ## Redrawing Raw plot
             for i in range(self.num_trans):                        

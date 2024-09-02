@@ -45,7 +45,6 @@
 
 ## Doing
 - Refine the FMCW signal theory
-    - Distance-dependent amplitude
     - Angle-dependent RCS (Radar Cross Section)
 
 ## Done 
@@ -65,6 +64,7 @@ $$c_j = \sum_{i=0}^{T} (m_{i,j} - p_{i,j})^2$$
 - Clustering: Fuse the same target points to one single target. DBSCAN was used as a first implementation since it allows clusters in arbitrary shape. Further improvements might be to use HDBSCAN* or SDPFC[^tracking_book]
 - Filtering: IMM (Interactive Multiple Model) Estimator was implemented using KF (Kalman Filter) and EKF (Extended Kalman Filter) with 2 motion models for CV (constant velocity) and CT (constant turn)[^cambridge_tracking]. The Filtering works for a single target for now. After Data Association it will be for multiple targets.
 - Data Association: GNN (Global Nearest Neighbor) was implemented. Improvement: Use PDA (Proabilistic Data Association) Algorithms
+- Distance-dependent amplitude
 
 
 # Project Structure

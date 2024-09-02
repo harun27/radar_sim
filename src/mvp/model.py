@@ -17,7 +17,11 @@ class Model:
         self.__init_nodes()
         self.tracker = Tracker()
         self.__dT = 0.1 # s
+        
         self.raw_radar = self.raw_radar_range = self.max_i = None
+        self.__estimations = None
+        self.__targets = None
+        self.__tracks = {}
         
     ##########
     ## Getters
@@ -91,7 +95,7 @@ class Model:
         if verbose:
             self.__targets, self.__estimations, self.raw_radar, self.raw_radar_range, self.max_i, self.__tracks = self.tracker.track(H, Transceiver.BW, self.trans_pos, self.dT, verbose)
         else:
-            self.__targets = self.tracker.track(H, Transceiver.BW, self.trans_pos, self.dT)
+            self.__tracks = self.tracker.track(H, Transceiver.BW, self.trans_pos, self.dT)
         
         
         
