@@ -51,15 +51,23 @@ class Model:
         return self.__trans_pos
         
     def __init_nodes(self):
-        # Init the transceivers and targets
+        # Init the Transceiver and Targets
+        
+        ## Targets
         tar1_pos = [-1, -1, 0]
         tar2_pos = [-5, 5, 0]
         tar3_pos = [3, -3, 0]
         
-        Target(tar1_pos, 'constant')
-        Target(tar2_pos, 'linear', speed=.5, direction=[1, -1, 0])
-        Target(tar3_pos, 'circular', speed=1, diameter=2)
+        rc1 = 1 # reflection coefficient
+        rc2 = 1
+        rc3 = 1
         
+        Target(tar1_pos, 'constant', reflection_coeff=rc1)
+        Target(tar2_pos, 'linear', reflection_coeff=rc2, speed=.5, direction=[1, -1, 0])
+        Target(tar3_pos, 'circular', reflection_coeff=rc3, speed=1, diameter=2)
+        
+        
+        ## Transceiver
         trans1_pos = [0, -10, 0] 
         trans2_pos = [10, 10, 0]
         trans3_pos = [-10, 10, 0]

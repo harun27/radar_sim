@@ -104,7 +104,7 @@ class View:
     
     def step(self, tracks, ground_truth, iter_num, verbose=False, targets=None, estimations=None, **kwargs):
         # Redrawing map plot
-        self.map_ax.set_title("Iteration " + str(iter_num) + "\nTime: " + str(iter_num*self.dT) + "s")
+        self.map_ax.set_title("Iteration " + str(iter_num) + "\nTime: " + str(round(iter_num*self.dT, 4)) + "s")
         # Redrawing ground truth
         self.map_gt.set_offsets(ground_truth[:2, :].T)
         # Redrawing Tracks

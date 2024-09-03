@@ -26,26 +26,24 @@
 
 # Kanban Plan
 ## Todo
-- Implement CFAR (Constant False Alarm Rate) rather than a fixed threshold
-- Make use of the velocities
-- Use a NN for tracking
-- Train an NN to have an adaptive threshold
-- Optimize the maximum finding algorithm
+- Use a NN for the whole tracking or just an NN for adaptive thresholds
+- Angle-dependent RCS (Radar Cross Section)
+- Make use of the phase
+- Adapt for real-time measurement
 - Implement random Clutter[^cambridge_tracking]
 - Clutter measurement density estimation[^cambridge_tracking]
 - Implement Gauss-Newton Algorithm to reduce the errors or WLLS (Weighted Linear Least Squares)
+- Make use of RSSI (Received Signal Strength Indicator)
 - Tackle NLOS (Non-Line-Of-Sight) issues (there is a paper doing this with NN)
-- Make use of RSS
-- TBD (Track before detect) instead of DBT (Detect before track)?
 - Plot Errors for Tracks
 - Work on the IMM-Estimator
     - Extend IMM-Estimator for KF to have a CA model
     - Optimize the Matrices and initializations
     - Use the PF or UKF
+- Implement Probabilistic Data Association methods
+- Implement better Clustering methods
 
 ## Doing
-- Refine the FMCW signal theory
-    - Angle-dependent RCS (Radar Cross Section)
 
 ## Done 
 - Simulation of movement

@@ -7,9 +7,8 @@ Created on Mon Jul  1 19:38:51 2024
 
 from mvp.presenter import Presenter
 
-presenter = Presenter()
+presenter = Presenter(verbose=True)
 
 while(1):
     if not presenter.run():
         break
-

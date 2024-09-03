@@ -343,7 +343,7 @@ class Tracker:
         possible_targets = self.__multilateration(dists, trans_pos, num_transceivers)
         
         # Set the threshold to filter out the targets. this shall be adaptive later
-        threshold = 1e-2
+        threshold = 3e-3*num_transceivers
         possible_targets = possible_targets[:, possible_targets[3, :] < threshold]
         if verbose:
             return possible_targets, H_db, max_i

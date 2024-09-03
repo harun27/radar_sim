@@ -12,12 +12,12 @@ from .model import Model
 from .view import View
 
 class Presenter:
-    def __init__(self):
+    def __init__(self, verbose=False):
         self.last = time()
         self.running = True
         self.step = False
         self.quit = False
-        self.verbose = False
+        self.verbose = verbose
         self.model = Model()
         self.view = View(self.model.trans_pos, self.model.dT, self.verbose)
         self.iter_num = 0
