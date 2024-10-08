@@ -100,6 +100,8 @@ class View:
         
         self.ellipse_plot = DynamicEllipsePlot(self.map_ax)
         
+        plt.show(block=False)
+        
         
     
     def step(self, tracks, ground_truth, iter_num, verbose=False, targets=None, estimations=None, **kwargs):
